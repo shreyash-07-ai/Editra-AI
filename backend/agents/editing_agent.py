@@ -8,6 +8,25 @@ class EditingAgent:
         self.llm = LLM()
 
     def operation_plan(self, prompt, artifact_type, structure):
+        p = (prompt or "").lower().strip()
+
+        # Deterministic handling for common visual-edit requests. This prevents
+        # a vague LLM response such as {"operations": [{"type": "noop"}]} from
+        # silently producing an identical copy of the previous artifact.
+        if artifact_type == "docx":
+            if any(x in p for x in ["implementation plan table to graph", "implementation plan to graph", "make a graph for implementation plan", "create a graph for implementation plan"]):
+                return {
+                    "operations": [
+                        {"type": "replace_table_with_chart", "table_index": 0, "chart_kind": "bar", "title": "Implementation Plan"}
+                    ]
+                }
+            if "graph" in p or "chart" in p or "pie" in p:
+                return {
+                    "operations": [
+                        {"type": "add_chart_from_tables", "table_index": 0, "chart_kind": "bar", "title": "Chart from implementation data"}
+                    ]
+                }
+
         fallback = {"operations": [{"type": "noop"}]}
         system = f"""You are Editra AI's precision editing agent.
 The user already has a generated {artifact_type.upper()} artifact.
@@ -24,6 +43,8 @@ insert_after_heading {{"type":"insert_after_heading","heading":"exact heading","
 append_section {{"type":"append_section","heading":"...","paragraphs":["..."]}}
 delete_paragraph {{"type":"delete_paragraph","index":number}}
 replace_table {{"type":"replace_table","table_index":number,"rows":[["...","..."]]}}
+add_chart_from_tables {{"type":"add_chart_from_tables","table_index":number,"chart_kind":"bar|pie","title":"..."}}
+replace_table_with_chart {{"type":"replace_table_with_chart","table_index":number,"chart_kind":"bar|pie","title":"..."}}
 
 PPTX operations:
 replace_shape_text {{"type":"replace_shape_text","slide":number,"old_text":"exact text","new_text":"..."}}
@@ -33,8 +54,11 @@ delete_slide {{"type":"delete_slide","slide":number}}
 add_visual {{"type":"add_visual","slide":number,"visual":{{...}}}}
 
 For 'update the introduction section', modify only the paragraph(s) inside that
-section. Do not touch the title or any other section. If the request cannot be
-performed safely, return noop instead of rewriting the artifact.
+section. Do not touch the title or any other section.
+For 'make the implementation plan table a graph', replace ONLY that table with
+an appropriate graph derived from the table's actual numeric data. Do not invent
+numbers. If the request cannot be performed safely, return noop instead of
+rewriting the artifact.
 """
         result = self.llm.json(
             system,
