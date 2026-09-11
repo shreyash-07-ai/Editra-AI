@@ -13,14 +13,13 @@ PREVIEW_DIR = DATA_DIR / "previews"
 for p in (UPLOAD_DIR, OUTPUT_DIR, PREVIEW_DIR):
     p.mkdir(parents=True, exist_ok=True)
 
-# Gemini is the primary LLM provider for Editra AI.
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
-# Optional real-time web research.
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")
 
-# Optional enterprise RAG.
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY", "")
 PINECONE_INDEX = os.getenv("PINECONE_INDEX", "editra")
-EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
+PINECONE_NAMESPACE = os.getenv("PINECONE_NAMESPACE", "default")
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "gemini-embedding-001")
+EMBEDDING_DIMENSION = int(os.getenv("EMBEDDING_DIMENSION", "768"))
