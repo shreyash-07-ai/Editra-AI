@@ -14,8 +14,12 @@ class EditingAgent:
             visual = any(x in p for x in ["graph", "chart", "plot", "visual", "diagram"])
             implementation = any(x in p for x in ["implementation plan", "implementation table", "implementation"])
 
-            if visual and implementation:
-                if ("replace" in p and "table" in p and visual) or "table to graph" in p or "table into graph" in p:
+            # Reversal MUST be checked before the generic visual branch.
+            if implementation and visual and "replace" in p and "table" in p and any(x in p for x in ["with table", "with the table", "back to table", "to table"]):
+                return {"operations": [{"type": "replace_visual_with_table", "table_index": 0}]}
+
+            if implementation and visual:
+                if ("replace" in p and "table" in p) or "table to graph" in p or "table into graph" in p or "change the implementation plan table to graph" in p:
                     return {"operations": [{
                         "type": "replace_table_with_chart",
                         "table_index": 0,
@@ -31,9 +35,6 @@ class EditingAgent:
 
             if ("remove" in p or "delete" in p) and visual:
                 return {"operations": [{"type": "remove_visuals"}]}
-
-            if "replace" in p and "graph" in p and "table" in p:
-                return {"operations": [{"type": "replace_visual_with_table", "table_index": 0}]}
 
         fallback = {"operations": [{"type": "noop"}]}
         system = f"""You are Editra AI's precision editing agent.
@@ -53,8 +54,8 @@ delete_paragraph {{"type":"delete_paragraph","index":number}}
 replace_table {{"type":"replace_table","table_index":number,"rows":[["...","..."]]}}
 add_chart_from_tables {{"type":"add_chart_from_tables","table_index":number,"chart_kind":"bar|pie","title":"..."}}
 replace_table_with_chart {{"type":"replace_table_with_chart","table_index":number,"chart_kind":"bar|pie","title":"..."}}
-remove_visuals {{"type":"remove_visuals"}}
 replace_visual_with_table {{"type":"replace_visual_with_table","table_index":number}}
+remove_visuals {{"type":"remove_visuals"}}
 
 PPTX operations:
 replace_shape_text {{"type":"replace_shape_text","slide":number,"old_text":"exact text","new_text":"..."}}
