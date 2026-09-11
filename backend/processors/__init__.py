@@ -1,21 +1,55 @@
 from pathlib import Path
+import shutil
+import subprocess
+import tempfile
+
 from docx import Document
 from pptx import Presentation
 import fitz
 
 
+def _ocr_image(path):
+    try:
+        from PIL import Image
+        import pytesseract
+        return pytesseract.image_to_string(Image.open(path))
+    except Exception:
+        return ""
+
+
+def _ocr_pdf_page(page):
+    try:
+        from PIL import Image
+        import pytesseract
+        pix = page.get_pixmap(matrix=fitz.Matrix(2, 2), alpha=False)
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+            tmp.write(pix.tobytes("png"))
+            tmp_path = tmp.name
+        try:
+            return pytesseract.image_to_string(Image.open(tmp_path))
+        finally:
+            Path(tmp_path).unlink(missing_ok=True)
+    except Exception:
+        return ""
+
+
 def extract_docx(path):
     doc = Document(path)
-    paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
+    paragraphs = []
+    for i, p in enumerate(doc.paragraphs):
+        if p.text.strip():
+            paragraphs.append({"index": i, "text": p.text, "style": p.style.name if p.style else ""})
     tables = []
-    for table in doc.tables:
-        tables.append([[cell.text for cell in row.cells] for row in table.rows])
+    for ti, table in enumerate(doc.tables):
+        tables.append({"index": ti, "rows": [[cell.text for cell in row.cells] for row in table.rows]})
     style = {}
     try:
         style["normal_font"] = doc.styles["Normal"].font.name
+        style["normal_size"] = str(doc.styles["Normal"].font.size)
     except Exception:
         pass
-    return {"type": "docx", "paragraphs": paragraphs, "tables": tables, "style": style}
+    return {"type":"docx", "paragraphs":paragraphs, "tables":tables, "style":style,
+            "paragraph_count":len(paragraphs), "table_count":len(tables)}
 
 
 def extract_pptx(path):
@@ -23,34 +57,47 @@ def extract_pptx(path):
     slides = []
     for i, slide in enumerate(prs.slides, 1):
         items = []
-        for shape in slide.shapes:
+        for si, shape in enumerate(slide.shapes):
             if hasattr(shape, "text") and shape.text.strip():
-                items.append({"text": shape.text, "left": shape.left, "top": shape.top, "width": shape.width, "height": shape.height})
-        slides.append({"number": i, "items": items, "layout": slide.slide_layout.name if slide.slide_layout else ""})
-    return {"type": "pptx", "slide_count": len(prs.slides), "slides": slides}
+                items.append({"shape":si, "text":shape.text, "left":shape.left, "top":shape.top,
+                              "width":shape.width, "height":shape.height, "shape_type":str(shape.shape_type)})
+        slides.append({"number":i, "items":items, "layout":slide.slide_layout.name if slide.slide_layout else ""})
+    return {"type":"pptx", "slide_count":len(prs.slides), "slides":slides}
 
 
 def extract_pdf(path):
     doc = fitz.open(path)
+    pages = []
     try:
-        pages = [page.get_text("text") for page in doc]
+        for i, page in enumerate(doc, 1):
+            text = page.get_text("text")
+            ocr_used = False
+            if not text.strip():
+                text = _ocr_pdf_page(page)
+                ocr_used = bool(text.strip())
+            pages.append({"number":i, "text":text, "ocr":ocr_used})
     finally:
         doc.close()
-    return {"type": "pdf", "page_count": len(pages), "pages": pages}
+    return {"type":"pdf", "page_count":len(pages), "pages":pages}
 
 
 def extract_image(path):
-    return {"type": "image", "path": str(path), "note": "Image requires OCR/vision processing if OCR dependencies/API are enabled."}
+    text = _ocr_image(path)
+    return {"type":"image", "path":str(path), "ocr_text":text, "ocr_available":bool(text.strip())}
 
 
 def analyze(path):
     ext = Path(path).suffix.lower()
-    if ext == ".docx":
-        return extract_docx(path)
-    if ext == ".pptx":
-        return extract_pptx(path)
-    if ext == ".pdf":
-        return extract_pdf(path)
-    if ext in {".png", ".jpg", ".jpeg"}:
-        return extract_image(path)
+    if ext == ".docx": return extract_docx(path)
+    if ext == ".pptx": return extract_pptx(path)
+    if ext == ".pdf": return extract_pdf(path)
+    if ext in {".png", ".jpg", ".jpeg"}: return extract_image(path)
+    if ext == ".ppt":
+        soffice = shutil.which("soffice") or shutil.which("libreoffice")
+        if not soffice:
+            raise ValueError("Legacy .ppt input requires LibreOffice for conversion to .pptx")
+        out_dir = Path(path).parent / "converted"
+        out_dir.mkdir(exist_ok=True)
+        subprocess.run([soffice, "--headless", "--convert-to", "pptx", "--outdir", str(out_dir), str(path)], check=True)
+        return extract_pptx(out_dir / (Path(path).stem + ".pptx"))
     raise ValueError(f"Unsupported file: {path}")
