@@ -50,10 +50,52 @@ class EditraOrchestrator:
                     chunks.append(p.get("text", "") if isinstance(p, dict) else str(p))
             elif kind == "pptx":
                 for s in a.get("slides", []):
-                    chunks.append(f"SLIDE {s.get('number')}: " + " | ".join(x.get("text", "") for x in s.get("items", [])))
+                    chunks.append(
+                        f"SLIDE {s.get('number')}: "
+                        + " | ".join(x.get("text", "") for x in s.get("items", []))
+                    )
             elif kind == "image":
                 chunks.append(a.get("ocr_text", ""))
         return "\n".join(x for x in chunks if x).strip()
+
+    def _research_context(self, analyses):
+        """Build a compact topic-oriented context for web search.
+
+        Never send the complete uploaded document to Tavily. The complete
+        document remains available to Gemini for generation; Tavily receives
+        only a small, representative set of titles/headings/terms.
+        """
+        pieces = []
+        for analysis in analyses:
+            kind = analysis.get("type")
+            if kind == "docx":
+                paragraphs = analysis.get("paragraphs", [])
+                for item in paragraphs:
+                    text = item.get("text", "") if isinstance(item, dict) else str(item)
+                    if text.strip():
+                        pieces.append(text.strip())
+                    if len(pieces) >= 12:
+                        break
+            elif kind == "pptx":
+                for slide in analysis.get("slides", []):
+                    texts = [x.get("text", "") for x in slide.get("items", [])]
+                    if texts:
+                        pieces.append("Slide " + str(slide.get("number")) + ": " + " | ".join(texts[:2]))
+                    if len(pieces) >= 12:
+                        break
+            elif kind == "pdf":
+                for page in analysis.get("pages", [])[:4]:
+                    text = page.get("text", "")
+                    if text.strip():
+                        pieces.append(text.strip()[:300])
+            elif kind == "image":
+                text = analysis.get("ocr_text", "")
+                if text.strip():
+                    pieces.append(text.strip()[:500])
+
+        # Keep enough context to identify the subject while remaining far
+        # below Tavily's hard 1500-character query limit.
+        return " | ".join(pieces)[:900]
 
     def run(self, prompt, upload_paths, current_artifact, conversation):
         cid = self._conversation_id(current_artifact)
@@ -68,10 +110,24 @@ class EditraOrchestrator:
             ext = ".pptx" if artifact_type == "pptx" else ".docx"
             aid, output_path = self.store.new_output(ext, version)
             if artifact_type == "pptx":
-                self.ppt_gen.generate(output_path, prompt, self._source_text([current_analysis]), existing=current_artifact, edit_plan=plan)
+                self.ppt_gen.generate(
+                    output_path,
+                    prompt,
+                    self._source_text([current_analysis]),
+                    existing=current_artifact,
+                    edit_plan=plan,
+                )
             else:
-                self.doc_gen.generate(output_path, prompt, self._source_text([current_analysis]), existing=current_artifact, edit_plan=plan)
-            return self._finalize(aid, output_path, artifact_type, version, cid, current_analysis, [])
+                self.doc_gen.generate(
+                    output_path,
+                    prompt,
+                    self._source_text([current_analysis]),
+                    existing=current_artifact,
+                    edit_plan=plan,
+                )
+            return self._finalize(
+                aid, output_path, artifact_type, version, cid, current_analysis, []
+            )
 
         # First request: extract the complete uploaded material as grounding context.
         analyses = []
@@ -92,13 +148,14 @@ class EditraOrchestrator:
         route = self.supervisor.route(prompt, None, analyses)
         sources = [Path(x).name for x in upload_paths]
 
-        # When an uploaded file exists, research is attempted to relate the user's
-        # request to current external information. Without a Tavily key it safely
-        # becomes a no-op instead of breaking artifact generation.
+        # Research uses only a compact representation of the uploaded file.
+        # The full source_text is intentionally NOT sent to Tavily because
+        # Tavily has a strict 1500-character search-query limit.
         if upload_paths or route.get("research"):
-            research_query = prompt
-            if source_text:
-                research_query += "\nUploaded-file context:\n" + source_text[:8000]
+            research_context = self._research_context(analyses)
+            research_query = (prompt or "").strip()
+            if research_context:
+                research_query += "\nRelated document topics: " + research_context
             rr = self.research.search(research_query)
             for x in rr.get("results", []):
                 source_text += f"\nWEB SOURCE: {x.get('title', '')}\n{x.get('content', '')}"
@@ -111,19 +168,47 @@ class EditraOrchestrator:
                 if x.get("source"):
                     sources.append(str(x["source"]))
 
-        artifact_type = route.get("output_type") or ("pptx" if any(x.get("type") == "pptx" for x in analyses) else "docx")
-        aid, output_path = self.store.new_output(".pptx" if artifact_type == "pptx" else ".docx", 1)
+        artifact_type = route.get("output_type") or (
+            "pptx" if any(x.get("type") == "pptx" for x in analyses) else "docx"
+        )
+        aid, output_path = self.store.new_output(
+            ".pptx" if artifact_type == "pptx" else ".docx", 1
+        )
         if artifact_type == "pptx":
-            self.ppt_gen.generate(output_path, route["instructions"], source_text, template_path=template_path)
+            self.ppt_gen.generate(
+                output_path,
+                route["instructions"],
+                source_text,
+                template_path=template_path,
+            )
         else:
-            doc_template = next((str(p) for p in upload_paths if Path(p).suffix.lower() == ".docx"), None)
-            self.doc_gen.generate(output_path, route["instructions"], source_text, template_path=doc_template)
-        return self._finalize(aid, output_path, artifact_type, 1, cid, analyses[0] if analyses else {}, sources)
+            doc_template = next(
+                (str(p) for p in upload_paths if Path(p).suffix.lower() == ".docx"),
+                None,
+            )
+            self.doc_gen.generate(
+                output_path,
+                route["instructions"],
+                source_text,
+                template_path=doc_template,
+            )
+        return self._finalize(
+            aid,
+            output_path,
+            artifact_type,
+            1,
+            cid,
+            analyses[0] if analyses else {},
+            sources,
+        )
 
     def _finalize(self, aid, output_path, artifact_type, version, cid, structure, sources):
         ok, checks = self.validation.validate(output_path, artifact_type)
         if not ok:
-            return {"message": "I generated the artifact, but validation failed: " + "; ".join(checks)}
+            return {
+                "message": "I generated the artifact, but validation failed: "
+                + "; ".join(checks)
+            }
         pdir = self.store.preview_dir(aid)
         images = preview(output_path, artifact_type, pdir)
         artifact = {
@@ -133,12 +218,21 @@ class EditraOrchestrator:
             "path": str(output_path),
             "artifact_type": artifact_type,
             "version": version,
-            "mime": "application/vnd.openxmlformats-officedocument.presentationml.presentation" if artifact_type == "pptx" else "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "mime": (
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+                if artifact_type == "pptx"
+                else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            ),
             "preview_type": "images" if images else "text",
-            "preview": images if images else "Preview unavailable. Install LibreOffice for visual DOCX/PPTX previews.",
+            "preview": images
+            if images
+            else "Preview unavailable. Install LibreOffice for visual DOCX/PPTX previews.",
             "structure": structure,
             "sources": sources,
         }
         self.store.register(artifact)
-        message = f"Done — I created **{artifact['filename']}** (version {version}). The next edit will modify only the requested part and preserve the rest of this artifact."
+        message = (
+            f"Done — I created **{artifact['filename']}** (version {version}). "
+            "The next edit will modify only the requested part and preserve the rest of this artifact."
+        )
         return {"message": message, "artifact": artifact, "sources": sources}
