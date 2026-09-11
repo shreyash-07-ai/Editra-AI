@@ -13,10 +13,14 @@ PREVIEW_DIR = DATA_DIR / "previews"
 for p in (UPLOAD_DIR, OUTPUT_DIR, PREVIEW_DIR):
     p.mkdir(parents=True, exist_ok=True)
 
-LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai").lower()
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
+# Gemini is the primary LLM provider for Editra AI.
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+
+# Optional real-time web research.
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")
+
+# Optional enterprise RAG.
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY", "")
 PINECONE_INDEX = os.getenv("PINECONE_INDEX", "editra")
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
