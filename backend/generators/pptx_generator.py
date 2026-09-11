@@ -20,48 +20,44 @@ class PPTXGenerator:
             shutil.copy2(base, output_path)
             if edit_plan:
                 return self.apply_edit_plan(output_path, edit_plan)
-            # Preserve the uploaded deck and add only explicitly requested content.
             content = self._outline(prompt, source_text)
             prs = Presentation(output_path)
-            if content.get("slides"):
-                layout = prs.slide_layouts[1] if len(prs.slide_layouts) > 1 else prs.slide_layouts[0]
-                for s in content["slides"]:
-                    slide = prs.slides.add_slide(layout)
-                    if slide.shapes.title:
-                        slide.shapes.title.text = s.get("title", "")
-                    body = slide.placeholders[1] if len(slide.placeholders) > 1 else None
-                    if body:
-                        body.text_frame.clear()
-                        for i, bullet in enumerate(s.get("bullets", [])):
-                            p = body.text_frame.paragraphs[0] if i == 0 else body.text_frame.add_paragraph()
-                            p.text = bullet
-                prs.save(output_path)
+            self._append_content(prs, content)
+            prs.save(output_path)
             return output_path
 
         prs = Presentation()
         content = self._outline(prompt, source_text)
-        layout = prs.slide_layouts[1] if len(prs.slide_layouts) > 1 else prs.slide_layouts[0]
-        for s in content.get("slides", []):
-            slide = prs.slides.add_slide(layout)
-            slide.shapes.title.text = s.get("title", "")
-            body = slide.placeholders[1] if len(slide.placeholders) > 1 else None
-            if body:
-                body.text_frame.clear()
-                for i, bullet in enumerate(s.get("bullets", [])):
-                    p = body.text_frame.paragraphs[0] if i == 0 else body.text_frame.add_paragraph()
-                    p.text = bullet
+        self._append_content(prs, content)
         prs.save(output_path)
         return output_path
 
     def _outline(self, prompt, source_text):
         return self.llm.json(
             """Create presentation slides grounded in the source material. Return JSON only:
-{\"slides\":[{\"title\":\"...\",\"bullets\":[\"...\"]}]}.
-Do not invent unsupported facts. If the user did not ask for new slides, return {\"slides\":[]}.
+{"slides":[{"title":"...","bullets":["..."],"visual":null|{"kind":"bar_chart"|"pie_chart"|"process","categories":[...],"values":[...],"series_name":"...","blocks":[...]}]}.
+Do not invent unsupported numerical data. Use a chart only when the source contains suitable data.
+Use a process/block visual for workflows or architectures when useful. If the user did not ask
+for new slides, return {"slides":[]}.
 """,
             f"REQUEST:\n{prompt}\nSOURCE:\n{source_text}",
             {"slides": []},
         )
+
+    def _append_content(self, prs, content):
+        layout = prs.slide_layouts[1] if len(prs.slide_layouts) > 1 else prs.slide_layouts[0]
+        for s in content.get("slides", []):
+            slide = prs.slides.add_slide(layout)
+            if slide.shapes.title:
+                slide.shapes.title.text = s.get("title", "")
+            body = slide.placeholders[1] if len(slide.placeholders) > 1 else None
+            if body:
+                body.text_frame.clear()
+                for i, bullet in enumerate(s.get("bullets", [])):
+                    p = body.text_frame.paragraphs[0] if i == 0 else body.text_frame.add_paragraph()
+                    p.text = bullet
+            if s.get("visual"):
+                self._add_visual_to_slide(slide, s["visual"])
 
     def apply_edit_plan(self, path, plan):
         prs = Presentation(path)
@@ -76,7 +72,9 @@ Do not invent unsupported facts. If the user did not ask for new slides, return 
             elif kind == "delete_slide":
                 self._delete_slide(prs, int(op.get("slide", 0)))
             elif kind == "add_visual":
-                self._add_visual(prs, op)
+                slide_no = int(op.get("slide", 0))
+                if 1 <= slide_no <= len(prs.slides):
+                    self._add_visual_to_slide(prs.slides[slide_no - 1], op.get("visual", {}))
         prs.save(path)
         return path
 
@@ -107,6 +105,8 @@ Do not invent unsupported facts. If the user did not ask for new slides, return 
             for i, bullet in enumerate(op.get("bullets", [])):
                 p = body.text_frame.paragraphs[0] if i == 0 else body.text_frame.add_paragraph()
                 p.text = bullet
+        if op.get("visual"):
+            self._add_visual_to_slide(slide, op["visual"])
 
     def _delete_slide(self, prs, slide_no):
         if not (1 <= slide_no <= len(prs.slides)):
@@ -114,25 +114,26 @@ Do not invent unsupported facts. If the user did not ask for new slides, return 
         slide = prs.slides[slide_no - 1]
         slide._element.getparent().remove(slide._element)
 
-    def _add_visual(self, prs, op):
-        slide_no = int(op.get("slide", 0))
-        if not (1 <= slide_no <= len(prs.slides)):
-            return
-        visual = op.get("visual", {})
-        slide = prs.slides[slide_no - 1]
+    def _add_visual_to_slide(self, slide, visual):
         kind = visual.get("kind", "process")
-        if kind == "bar_chart" or kind == "pie_chart":
+        if kind in {"bar_chart", "pie_chart"}:
+            categories = visual.get("categories", ["A", "B", "C"])
+            values = visual.get("values", [1, 2, 3])
+            if not categories or len(categories) != len(values):
+                return
             data = CategoryChartData()
-            data.categories = visual.get("categories", ["A", "B", "C"])
-            data.add_series(visual.get("series_name", "Value"), visual.get("values", [1, 2, 3]))
+            data.categories = categories
+            data.add_series(visual.get("series_name", "Value"), values)
             chart_type = XL_CHART_TYPE.PIE if kind == "pie_chart" else XL_CHART_TYPE.COLUMN_CLUSTERED
-            slide.shapes.add_chart(chart_type, Inches(5.8), Inches(1.8), Inches(6.5), Inches(4.6), data)
+            slide.shapes.add_chart(chart_type, Inches(6.2), Inches(1.8), Inches(6.2), Inches(4.5), data)
             return
-        # Simple editable process/block diagram using native PowerPoint shapes.
+
         blocks = visual.get("blocks", ["Input", "Analysis", "Output"])
+        if not blocks:
+            return
         y = 2.1
         for i, label in enumerate(blocks):
-            x = 0.8 + i * 3.8
+            x = 0.6 + i * min(3.4, 11.8 / max(1, len(blocks)))
             shape = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(x), Inches(y), Inches(2.6), Inches(1.0))
             shape.text_frame.text = str(label)
             for paragraph in shape.text_frame.paragraphs:
