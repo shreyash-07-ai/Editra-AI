@@ -1,11 +1,13 @@
-from copy import deepcopy
 from pathlib import Path
 import shutil
 import re
 import tempfile
+import json
 
 from docx import Document
-from docx.shared import Inches
+from docx.shared import Inches, Pt
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
 from docx.oxml import OxmlElement
 from docx.text.paragraph import Paragraph
 
@@ -13,6 +15,11 @@ from ..llm import LLM
 
 
 class DOCXGenerator:
+    """Generate and edit DOCX files while preserving the existing artifact."""
+
+    BACKUP_PREFIX = "EDITRA_TABLE_BACKUP::"
+    CHART_CAPTION_PREFIX = "EDITRA_CHART::"
+
     def __init__(self):
         self.llm = LLM()
 
@@ -20,34 +27,37 @@ class DOCXGenerator:
         base = existing.get("path") if existing else template_path
         if base and Path(base).exists():
             shutil.copy2(base, output_path)
+            doc = Document(output_path)
             if edit_plan:
-                return self.apply_edit_plan(output_path, edit_plan)
+                self.apply_edit_plan(output_path, edit_plan)
+                return output_path
             if self._needs_generated_content(prompt):
-                doc = Document(output_path)
                 addition = self._generate_addition(prompt, source_text)
                 if addition:
-                    doc.add_page_break()
-                    doc.add_heading(addition.get("heading", "Editra AI Analysis"), 1)
-                    for p in addition.get("paragraphs", []):
-                        doc.add_paragraph(p)
-                    doc.save(output_path)
+                    self._insert_generated_section(doc, addition)
+            self._polish_layout(doc)
+            doc.save(output_path)
             return output_path
 
         content = self.llm.json(
             """Create a professional document using the supplied source material.
 Return JSON only: {\"title\":\"...\",\"sections\":[{\"heading\":\"...\",\"paragraphs\":[\"...\"]}]}.
-Use the source as the factual basis and cover the relevant source content. Do not invent facts.""",
+Use the source as the factual basis and cover relevant source content. Do not invent facts.""",
             f"REQUEST:\n{prompt}\nSOURCE:\n{source_text}",
             {"title":"Editra AI Document", "sections":[{"heading":"Source Content", "paragraphs":[source_text[:5000]]}]},
         )
         doc = Document()
-        doc.sections[0].top_margin = Inches(.7)
-        doc.sections[0].bottom_margin = Inches(.7)
+        section = doc.sections[0]
+        section.top_margin = Inches(.7)
+        section.bottom_margin = Inches(.7)
+        section.left_margin = Inches(.8)
+        section.right_margin = Inches(.8)
         doc.add_heading(content.get("title", "Editra AI Document"), 0)
-        for section in content.get("sections", []):
-            doc.add_heading(section.get("heading", "Section"), 1)
-            for paragraph in section.get("paragraphs", []):
+        for item in content.get("sections", []):
+            doc.add_heading(item.get("heading", "Section"), 1)
+            for paragraph in item.get("paragraphs", []):
                 doc.add_paragraph(paragraph)
+        self._polish_layout(doc)
         doc.save(output_path)
         return output_path
 
@@ -64,45 +74,39 @@ Base it only on the supplied source and user request. Keep the original document
             {"heading":"Editra AI Analysis", "paragraphs":["The uploaded document was preserved as the source artifact."]},
         )
 
+    def _insert_generated_section(self, doc, addition):
+        doc.add_page_break()
+        doc.add_heading(addition.get("heading", "Editra AI Analysis"), 1)
+        for text in addition.get("paragraphs", []):
+            doc.add_paragraph(text)
+
     def apply_edit_plan(self, path, plan):
         doc = Document(path)
-        changed = False
-
         for op in plan.get("operations", []):
             kind = op.get("type")
+            if kind == "noop":
+                continue
             if kind == "replace_paragraph":
-                changed |= self._replace_paragraph(doc, int(op.get("index", -1)), op.get("text", ""))
+                self._replace_paragraph(doc, int(op.get("index", -1)), op.get("text", ""))
             elif kind == "delete_paragraph":
-                changed |= self._delete_paragraph(doc, int(op.get("index", -1)))
+                self._delete_paragraph(doc, int(op.get("index", -1)))
             elif kind == "insert_after_heading":
-                changed |= self._insert_after_heading(doc, op.get("heading", ""), op.get("paragraphs", []))
+                self._insert_after_heading(doc, op.get("heading", ""), op.get("paragraphs", []))
             elif kind == "append_section":
                 doc.add_heading(op.get("heading", "Section"), 1)
                 for text in op.get("paragraphs", []):
                     doc.add_paragraph(text)
-                changed = True
             elif kind == "replace_table":
-                changed |= self._replace_table(doc, int(op.get("table_index", -1)), op.get("rows", []))
+                self._replace_table(doc, int(op.get("table_index", -1)), op.get("rows", []))
             elif kind == "add_chart_from_tables":
-                changed |= self._add_chart_from_table(
-                    doc,
-                    int(op.get("table_index", -1)),
-                    op.get("chart_kind", "bar"),
-                    op.get("title", "Chart"),
-                    replace_table=False,
-                )
+                self._add_chart_from_table(doc, int(op.get("table_index", -1)), op.get("chart_kind", "bar"), op.get("title", "Chart"), False)
             elif kind == "replace_table_with_chart":
-                changed |= self._add_chart_from_table(
-                    doc,
-                    int(op.get("table_index", -1)),
-                    op.get("chart_kind", "bar"),
-                    op.get("title", "Chart"),
-                    replace_table=True,
-                )
-
-        # Never silently create an identical version when an edit plan had a
-        # non-noop operation. The caller still gets a valid artifact, but this
-        # makes visual requests actually modify the document.
+                self._add_chart_from_table(doc, int(op.get("table_index", -1)), op.get("chart_kind", "bar"), op.get("title", "Chart"), True)
+            elif kind == "replace_visual_with_table":
+                self._restore_table_from_backup(doc, int(op.get("table_index", 0)))
+            elif kind == "remove_visuals":
+                self._remove_generated_visuals(doc)
+        self._polish_layout(doc)
         doc.save(path)
         return path
 
@@ -144,98 +148,139 @@ Base it only on the supplied source and user request. Keep the original document
         while len(table.rows) < len(rows):
             table.add_row()
         for r, values in enumerate(rows):
-            if r >= len(table.rows):
-                break
             for c, value in enumerate(values):
-                if c < len(table.rows[r].cells):
+                if r < len(table.rows) and c < len(table.rows[r].cells):
                     table.rows[r].cells[c].text = str(value)
         return True
 
     def _add_chart_from_table(self, doc, table_index, chart_kind, title, replace_table=False):
         if not (0 <= table_index < len(doc.tables)):
             return False
-
         table = doc.tables[table_index]
         rows = [[cell.text.strip() for cell in row.cells] for row in table.rows]
         if len(rows) < 2 or len(rows[0]) < 2:
             return False
 
-        # Find one numeric column. For an implementation-plan table this is
-        # typically the duration/week/percentage column. We deliberately use
-        # only numbers already present in the source table.
         headers = rows[0]
         numeric_col = None
-        values = []
-        labels = []
+        values, labels = [], []
         for col in range(1, len(headers)):
-            candidate_values = []
-            candidate_labels = []
+            cv, cl = [], []
             for row in rows[1:]:
                 if col >= len(row):
                     continue
                 match = re.search(r"[-+]?\d+(?:\.\d+)?", row[col].replace(",", ""))
                 if match:
-                    candidate_values.append(float(match.group()))
-                    candidate_labels.append(row[0] if row else f"Item {len(candidate_values)}")
-            if len(candidate_values) >= 2:
-                numeric_col = col
-                values = candidate_values
-                labels = candidate_labels
+                    cv.append(float(match.group()))
+                    cl.append(row[0] or f"Item {len(cv)}")
+            if len(cv) >= 2:
+                numeric_col, values, labels = col, cv, cl
                 break
-
         if numeric_col is None:
             return False
 
-        image_path = self._create_chart_image(
-            labels,
-            values,
-            chart_kind,
-            title or headers[numeric_col],
-        )
+        image_path = self._create_chart_image(labels, values, chart_kind, title or headers[numeric_col])
         if not image_path:
             return False
 
+        table_element = table._element
+        parent = table_element.getparent()
+        index = parent.index(table_element)
+
         if replace_table:
-            table_element = table._element
-            parent = table_element.getparent()
-            index = parent.index(table_element)
+            backup = OxmlElement("w:p")
+            parent.insert(index, backup)
+            backup_para = Paragraph(backup, table._parent)
+            run = backup_para.add_run(self.BACKUP_PREFIX + json.dumps(rows, ensure_ascii=False))
+            run.font.hidden = True
             parent.remove(table_element)
-
-            # Insert chart immediately where the table was.
-            p = OxmlElement("w:p")
-            parent.insert(index, p)
-            para = Paragraph(p, table._parent)
-            para.add_run().add_picture(image_path, width=Inches(6.3))
-            caption = OxmlElement("w:p")
-            parent.insert(index + 1, caption)
-            cap_para = Paragraph(caption, table._parent)
-            cap_run = cap_para.add_run(title or "Chart")
-            cap_run.bold = True
+            index += 1
         else:
-            doc.add_paragraph(title or "Chart").runs[0].bold = True
-            doc.add_picture(image_path, width=Inches(6.3))
+            index += 1
 
-        try:
-            Path(image_path).unlink(missing_ok=True)
-        except Exception:
-            pass
+        image_p = OxmlElement("w:p")
+        parent.insert(index, image_p)
+        image_para = Paragraph(image_p, table._parent)
+        image_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        image_para.add_run().add_picture(image_path, width=Inches(6.1))
+
+        caption_p = OxmlElement("w:p")
+        parent.insert(index + 1, caption_p)
+        caption = Paragraph(caption_p, table._parent)
+        caption.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        run = caption.add_run(f"{self.CHART_CAPTION_PREFIX}{title or 'Chart'}")
+        run.bold = True
+        run.font.size = Pt(9)
+
+        Path(image_path).unlink(missing_ok=True)
         return True
+
+    def _restore_table_from_backup(self, doc, table_index=0):
+        body = doc._body._element
+        children = list(body)
+        for i, child in enumerate(children):
+            text = "".join(child.itertext())
+            if self.BACKUP_PREFIX in text:
+                raw = text.split(self.BACKUP_PREFIX, 1)[1]
+                try:
+                    rows = json.loads(raw)
+                except Exception:
+                    return False
+
+                # Remove the backup paragraph and the generated chart/caption
+                # immediately following it.
+                remove_count = 1
+                while i + remove_count < len(children) and remove_count <= 2:
+                    sibling = children[i + remove_count]
+                    sibling_text = "".join(sibling.itertext())
+                    has_drawing = bool(sibling.xpath('.//w:drawing'))
+                    if has_drawing or self.CHART_CAPTION_PREFIX in sibling_text:
+                        body.remove(sibling)
+                        remove_count += 1
+                    else:
+                        break
+                body.remove(child)
+
+                table = doc.add_table(rows=len(rows), cols=max(len(r) for r in rows))
+                table.style = "Table Grid"
+                for r, values in enumerate(rows):
+                    for c, value in enumerate(values):
+                        table.cell(r, c).text = str(value)
+                table_element = table._element
+                body.insert(i, table_element)
+                return True
+        return False
+
+    def _remove_generated_visuals(self, doc):
+        body = doc._body._element
+        for child in list(body):
+            text = "".join(child.itertext())
+            if self.CHART_CAPTION_PREFIX in text:
+                body.remove(child)
+                # remove the nearest preceding paragraph containing the image
+                siblings = list(body)
+                try:
+                    idx = siblings.index(child)
+                except ValueError:
+                    continue
+                if idx > 0 and siblings[idx - 1].xpath('.//w:drawing'):
+                    body.remove(siblings[idx - 1])
+            elif self.BACKUP_PREFIX in text:
+                body.remove(child)
 
     def _create_chart_image(self, labels, values, kind, title):
         try:
             import matplotlib.pyplot as plt
-
             temp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
             temp.close()
             path = temp.name
-
-            fig, ax = plt.subplots(figsize=(8, 4.5))
+            fig, ax = plt.subplots(figsize=(8, 4.2))
             if kind == "pie":
                 ax.pie(values, labels=labels, autopct="%1.0f%%")
             else:
                 ax.bar(labels, values)
                 ax.set_ylabel("Value")
-                ax.tick_params(axis="x", rotation=30)
+                ax.tick_params(axis="x", rotation=25)
             ax.set_title(title)
             fig.tight_layout()
             fig.savefig(path, dpi=180, bbox_inches="tight")
@@ -243,3 +288,45 @@ Base it only on the supplied source and user request. Keep the original document
             return path
         except Exception:
             return None
+
+    def _polish_layout(self, doc):
+        """Apply conservative professional alignment without changing content."""
+        for section in doc.sections:
+            section.top_margin = Inches(.7)
+            section.bottom_margin = Inches(.7)
+            section.left_margin = Inches(.8)
+            section.right_margin = Inches(.8)
+
+        for i, p in enumerate(doc.paragraphs):
+            text = p.text.strip()
+            if not text:
+                continue
+            if p.style and p.style.name == "Title":
+                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            elif p.style and p.style.name.startswith("Heading"):
+                p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+                p.paragraph_format.space_before = Pt(10)
+                p.paragraph_format.space_after = Pt(4)
+            elif p.style and p.style.name.startswith("List"):
+                p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+                p.paragraph_format.space_after = Pt(2)
+            elif not any(x in text for x in [self.CHART_CAPTION_PREFIX, self.BACKUP_PREFIX]):
+                p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+                p.paragraph_format.space_after = Pt(6)
+                p.paragraph_format.line_spacing = 1.08
+
+        for table in doc.tables:
+            table.autofit = True
+            for row in table.rows:
+                for cell in row.cells:
+                    cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+                    for p in cell.paragraphs:
+                        p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+                        p.paragraph_format.space_after = Pt(2)
+            if table.rows:
+                for run in table.rows[0].cells[0].paragraphs[0].runs:
+                    run.bold = True
+                for cell in table.rows[0].cells:
+                    for p in cell.paragraphs:
+                        for run in p.runs:
+                            run.bold = True
