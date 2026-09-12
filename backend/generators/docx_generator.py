@@ -29,7 +29,7 @@ class DOCXGenerator:
             shutil.copy2(base, output_path)
             doc = Document(output_path)
             if edit_plan:
-                self.apply_edit_plan(output_path, edit_plan)
+                self.apply_edit_plan(output_path, edit_plan, source_text=source_text)
                 return output_path
             if self._needs_generated_content(prompt):
                 addition = self._generate_addition(prompt, source_text)
@@ -80,7 +80,7 @@ Base it only on the supplied source and user request. Keep the original document
         for text in addition.get("paragraphs", []):
             doc.add_paragraph(text)
 
-    def apply_edit_plan(self, path, plan):
+    def apply_edit_plan(self, path, plan, source_text=""):
         doc = Document(path)
         for op in plan.get("operations", []):
             kind = op.get("type")
@@ -92,6 +92,8 @@ Base it only on the supplied source and user request. Keep the original document
                 self._delete_paragraph(doc, int(op.get("index", -1)))
             elif kind == "insert_after_heading":
                 self._insert_after_heading(doc, op.get("heading", ""), op.get("paragraphs", []))
+            elif kind == "insert_description_at_beginning":
+                self._insert_description_at_beginning(doc, source_text)
             elif kind == "append_section":
                 doc.add_heading(op.get("heading", "Section"), 1)
                 for text in op.get("paragraphs", []):
@@ -109,6 +111,43 @@ Base it only on the supplied source and user request. Keep the original document
         self._polish_layout(doc)
         doc.save(path)
         return path
+
+    def _insert_description_at_beginning(self, doc, source_text):
+        # Build a factual, deterministic description from the actual document.
+        # This avoids returning an unchanged source file when the LLM is unavailable.
+        title = next((p.text.strip() for p in doc.paragraphs if p.text.strip()), "the document")
+        headings = [
+            p.text.strip() for p in doc.paragraphs
+            if p.text.strip() and p.style and p.style.name.startswith("Heading")
+        ]
+        table_count = len(doc.tables)
+        parts = [f"This document, titled '{title}', presents the material contained in the uploaded artifact."]
+        if headings:
+            parts.append("Its main sections cover " + ", ".join(headings[:8]) + ".")
+        if table_count:
+            parts.append(f"It also contains {table_count} table" + ("." if table_count == 1 else "s."))
+        parts.append("The description is based on the existing document content and preserves the original document below.")
+
+        body = doc._body._element
+        first_content = next((child for child in list(body) if child.tag.endswith("}p")), None)
+        if first_content is None:
+            return False
+
+        heading_el = OxmlElement("w:p")
+        body.insert(body.index(first_content), heading_el)
+        heading = Paragraph(heading_el, doc.paragraphs[0]._parent)
+        heading.style = doc.styles["Heading 1"]
+        heading.add_run("Document Description")
+
+        anchor = heading_el
+        for text in parts:
+            p_el = OxmlElement("w:p")
+            anchor.addnext(p_el)
+            para = Paragraph(p_el, heading._parent)
+            para.style = doc.styles["Normal"]
+            para.add_run(text)
+            anchor = p_el
+        return True
 
     def _replace_paragraph(self, doc, index, text):
         if 0 <= index < len(doc.paragraphs):
@@ -227,8 +266,6 @@ Base it only on the supplied source and user request. Keep the original document
                 except Exception:
                     return False
 
-                # Remove the backup paragraph and the generated chart/caption
-                # immediately following it.
                 remove_count = 1
                 while i + remove_count < len(children) and remove_count <= 2:
                     sibling = children[i + remove_count]
@@ -256,14 +293,14 @@ Base it only on the supplied source and user request. Keep the original document
         for child in list(body):
             text = "".join(child.itertext())
             if self.CHART_CAPTION_PREFIX in text:
-                body.remove(child)
-                # remove the nearest preceding paragraph containing the image
                 siblings = list(body)
                 try:
                     idx = siblings.index(child)
                 except ValueError:
                     continue
-                if idx > 0 and siblings[idx - 1].xpath('.//w:drawing'):
+                body.remove(child)
+                siblings = list(body)
+                if idx > 0 and idx - 1 < len(siblings) and siblings[idx - 1].xpath('.//w:drawing'):
                     body.remove(siblings[idx - 1])
             elif self.BACKUP_PREFIX in text:
                 body.remove(child)
@@ -297,7 +334,7 @@ Base it only on the supplied source and user request. Keep the original document
             section.left_margin = Inches(.8)
             section.right_margin = Inches(.8)
 
-        for i, p in enumerate(doc.paragraphs):
+        for p in doc.paragraphs:
             text = p.text.strip()
             if not text:
                 continue
@@ -324,8 +361,6 @@ Base it only on the supplied source and user request. Keep the original document
                         p.alignment = WD_ALIGN_PARAGRAPH.LEFT
                         p.paragraph_format.space_after = Pt(2)
             if table.rows:
-                for run in table.rows[0].cells[0].paragraphs[0].runs:
-                    run.bold = True
                 for cell in table.rows[0].cells:
                     for p in cell.paragraphs:
                         for run in p.runs:
