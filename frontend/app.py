@@ -36,14 +36,15 @@ with st.sidebar:
     if st.button("＋ New chat", use_container_width=True):
         st.session_state.messages = []
         st.session_state.current_artifact = None
+        st.session_state.pop("upload_paths", None)
         st.rerun()
 
     st.divider()
     st.markdown("### Upload files")
     uploads = st.file_uploader(
         "DOCX, PDF, PPTX, PPT, PNG, JPG, JPEG",
-        type=["docx","pdf","pptx","ppt","png","jpg","jpeg"],
-        accept_multiple_files=True
+        type=["docx", "pdf", "pptx", "ppt", "png", "jpg", "jpeg"],
+        accept_multiple_files=True,
     )
 
     if uploads:
@@ -64,35 +65,54 @@ with st.sidebar:
     st.caption("• Version history")
 
 st.markdown('<div class="chat-title">Editra AI</div>', unsafe_allow_html=True)
-st.markdown('<div class="chat-subtitle">Upload an artifact, describe the change, preview the result, and keep editing until you are satisfied.</div>', unsafe_allow_html=True)
+st.markdown(
+    '<div class="chat-subtitle">Upload an artifact, describe the change, preview the result, and keep editing until you are satisfied.</div>',
+    unsafe_allow_html=True,
+)
 
-for m in st.session_state.messages:
+# Show the conversation text, but render an artifact only for the latest
+# assistant response. This prevents every previous document version from
+# appearing again after Streamlit reruns. The user always sees one current
+# output artifact: the document generated from the latest prompt.
+last_assistant_index = max(
+    (i for i, m in enumerate(st.session_state.messages) if m.get("role") == "assistant"),
+    default=-1,
+)
+
+for i, m in enumerate(st.session_state.messages):
     with st.chat_message(m["role"]):
         st.markdown(m["content"])
-        if m.get("artifact"):
+
+        # Historical versions remain available through the backend's version
+        # chain, but are not rendered as duplicate output cards in the chat.
+        if i == last_assistant_index and m.get("artifact"):
             a = m["artifact"]
-            st.markdown(f"**{a['filename']}** — version {a['version']}")
-            col1, col2 = st.columns(2)
-            with col1:
-                st.download_button(
-                    "⬇ Download editable file",
-                    data=Path(a["path"]).read_bytes(),
-                    file_name=a["filename"],
-                    mime=a["mime"],
-                    key=f"download_{a['id']}"
-                )
-            with col2:
-                if a["preview_type"] == "images":
-                    st.caption("Preview")
-                    for img in a["preview"]:
-                        st.image(img, use_container_width=True)
-                else:
-                    st.caption(a["preview"])
+            st.markdown(f"**Output:** {a['filename']} — version {a['version']}")
+            st.download_button(
+                "⬇ Download editable file",
+                data=Path(a["path"]).read_bytes(),
+                file_name=a["filename"],
+                mime=a["mime"],
+                key=f"download_{a['id']}",
+                use_container_width=True,
+            )
+
+            if a["preview_type"] == "images":
+                st.caption("Preview of the generated output")
+                for img in a["preview"]:
+                    st.image(img, use_container_width=True)
+            else:
+                st.info(a["preview"])
+
+            if m.get("sources"):
+                with st.expander("Sources & traceability"):
+                    for source in m["sources"]:
+                        st.write(source)
 
 prompt = st.chat_input("Ask Editra to create or modify your document…")
 
 if prompt:
-    st.session_state.messages.append({"role":"user","content":prompt})
+    st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
@@ -106,19 +126,22 @@ if prompt:
                 conversation=st.session_state.messages,
             )
 
-        st.markdown(result["message"])
+        # For every prompt, the response is centered on the newly generated
+        # artifact. Do not display the uploaded source as an additional output.
         if result.get("artifact"):
             st.session_state.current_artifact = result["artifact"]
             a = result["artifact"]
-            st.markdown(f"**{a['filename']}** — version {a['version']}")
+            st.markdown(f"**Output:** {a['filename']} — version {a['version']}")
             st.download_button(
                 "⬇ Download editable file",
                 data=Path(a["path"]).read_bytes(),
                 file_name=a["filename"],
                 mime=a["mime"],
-                key=f"download_live_{a['id']}"
+                key=f"download_live_{a['id']}",
+                use_container_width=True,
             )
             if a["preview_type"] == "images":
+                st.caption("Preview of the generated output")
                 for img in a["preview"]:
                     st.image(img, use_container_width=True)
             else:
@@ -126,11 +149,17 @@ if prompt:
 
             if result.get("sources"):
                 with st.expander("Sources & traceability"):
-                    for s in result["sources"]:
-                        st.write(s)
+                    for source in result["sources"]:
+                        st.write(source)
+        else:
+            st.error(result["message"])
 
+        # Keep only the response message and the latest artifact reference.
+        # Older artifact cards are intentionally not rendered on subsequent
+        # Streamlit reruns.
         st.session_state.messages.append({
-            "role":"assistant",
-            "content":result["message"],
-            "artifact":result.get("artifact")
+            "role": "assistant",
+            "content": result["message"] if not result.get("artifact") else "Output generated successfully.",
+            "artifact": result.get("artifact"),
+            "sources": result.get("sources", []),
         })
