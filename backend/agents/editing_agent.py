@@ -13,6 +13,14 @@ class EditingAgent:
         if artifact_type == "docx":
             visual = any(x in p for x in ["graph", "chart", "plot", "visual", "diagram"])
             implementation = any(x in p for x in ["implementation plan", "implementation table", "implementation"])
+            describe = any(x in p for x in ["describe the document", "describe document", "document description", "summarize the document", "summary of the document"])
+
+            # A description request is still a document-editing request. Put a
+            # concise description into the existing document instead of returning
+            # the unchanged source file. The generator builds the text from the
+            # actual document structure, so this works even when Gemini is out of quota.
+            if describe:
+                return {"operations": [{"type": "insert_description_at_beginning"}]}
 
             # Reversal MUST be checked before the generic visual branch.
             if implementation and visual and "replace" in p and "table" in p and any(x in p for x in ["with table", "with the table", "back to table", "to table"]):
@@ -49,6 +57,7 @@ Return JSON only in this shape: {{"operations":[...]}}.
 DOCX operations:
 replace_paragraph {{"type":"replace_paragraph","index":number,"text":"new text"}}
 insert_after_heading {{"type":"insert_after_heading","heading":"exact heading","paragraphs":["..."]}}
+insert_description_at_beginning {{"type":"insert_description_at_beginning"}}
 append_section {{"type":"append_section","heading":"...","paragraphs":["..."]}}
 delete_paragraph {{"type":"delete_paragraph","index":number}}
 replace_table {{"type":"replace_table","table_index":number,"rows":[["...","..."]]}}
