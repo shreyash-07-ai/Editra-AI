@@ -1,5 +1,36 @@
 from pathlib import Path
+import shutil
+import subprocess
 import fitz
+
+
+def convert_to_pdf(src_path, dest_path):
+    """Convert a DOCX/PPTX/XLSX file to a real, standalone PDF using LibreOffice.
+
+    Returns True on success. Requires `libreoffice`/`soffice` on PATH; callers
+    should treat a False return as a recoverable failure (existing artifact
+    stays the current working version).
+    """
+    soffice = shutil.which("libreoffice") or shutil.which("soffice")
+    if not soffice:
+        return False
+    src_path = Path(src_path)
+    dest_path = Path(dest_path)
+    out_dir = dest_path.parent
+    out_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        subprocess.run(
+            [soffice, "--headless", "--convert-to", "pdf", "--outdir", str(out_dir), str(src_path)],
+            check=True, capture_output=True, timeout=120,
+        )
+    except Exception:
+        return False
+    produced = out_dir / (src_path.stem + ".pdf")
+    if not produced.exists():
+        return False
+    if produced != dest_path:
+        shutil.move(str(produced), str(dest_path))
+    return True
 
 def preview_pdf(path, out_dir):
     out_dir.mkdir(parents=True, exist_ok=True)

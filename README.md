@@ -1,19 +1,19 @@
 # Editra AI
 
-Editra AI is a Streamlit-based multi-agent POC for generating and conversationally editing editable DOCX and PPTX artifacts.
+Editra AI is a Streamlit-based multi-agent POC for generating and conversationally editing editable DOCX, PPTX and XLSX artifacts, with PDF/CSV export and iterative version control (undo, restore-original, format conversion).
 
 ## Workflow
 
-1. Upload DOCX, PDF, PPTX or image files.
+1. Upload DOCX, PDF, PPTX, PPT, XLSX, CSV or image files.
 2. Give Editra a natural-language prompt.
 3. The supervisor routes the task.
-4. Documents/PPTs are analyzed.
+4. Documents/PPTs/spreadsheets are analyzed.
 5. Optional web research and Pinecone RAG provide additional context.
-6. An editable DOCX or PPTX is generated.
+6. An editable DOCX, PPTX or XLSX is generated.
 7. The artifact is validated.
 8. A visual preview is shown when LibreOffice is installed.
-9. Download the original editable artifact.
-10. Continue chatting to generate the next version.
+9. Download the original editable artifact, or export it to PDF/CSV.
+10. Continue chatting to generate the next version — including "undo the last change" or "go back to the original".
 
 ## Architecture
 
@@ -24,9 +24,10 @@ Editra AI is a Streamlit-based multi-agent POC for generating and conversational
 - RAG Agent
 - DOCX Generator
 - PPTX Generator
+- XLSX Generator
 - Validation Agent
 - Conversational Editing Agent
-- Artifact Store / Versioning
+- Artifact Store / Versioning (with undo and original-file recall)
 - Streamlit UI
 
 ## Setup — Windows PowerShell
@@ -46,9 +47,17 @@ Run:
 streamlit run frontend/app.py
 ```
 
+## Iterative editing
+
+Every follow-up prompt edits the current working document — never the original upload — unless you explicitly ask to:
+
+- **Undo the last change** — reverts to the previous version (also available as a sidebar button).
+- **Go back to the original** — restores the file you first uploaded (also available as a sidebar button). CSV originals are re-normalized into an editable XLSX so editing can continue.
+- **Convert / export to a different format** — e.g. "give me a PDF version", "convert this into a PowerPoint", "export the current sheet as CSV". PDF and CSV exports are flattened, read-only snapshots of the current editable version; the next edit request automatically resolves back to the underlying editable DOCX/PPTX/XLSX.
+
 ## Visual previews
 
-Install LibreOffice and ensure `libreoffice` is available on PATH. Editra converts generated DOCX/PPTX to PDF only for preview; the downloadable artifact remains the original editable DOCX/PPTX.
+Install LibreOffice and ensure `libreoffice` (or `soffice`) is available on PATH. Editra converts generated DOCX/PPTX to PDF for both previews and explicit PDF export; the downloadable artifact remains the original editable file unless you ask for a PDF/CSV export.
 
 ## Web research
 
@@ -60,7 +69,7 @@ Set `PINECONE_API_KEY` and `PINECONE_INDEX` to enable Pinecone retrieval. You st
 
 ## Important POC note
 
-The code deliberately keeps the artifact generation layer modular. For production-grade template fidelity, extend the DOCX/PPTX generators to clone and edit the uploaded template's existing paragraphs, runs, shapes, layouts, tables, charts and theme rather than rebuilding from scratch.
+The code deliberately keeps the artifact generation layer modular. For production-grade template fidelity, extend the DOCX/PPTX/XLSX generators to clone and edit the uploaded template's existing paragraphs, runs, shapes, layouts, tables, charts, cell styles and theme rather than rebuilding from scratch. Several DOCX edit heuristics (e.g. "add an executive summary", "add a competitive analysis section") are deterministic pattern matches tuned to a specific demo proposal document; free-form edit requests fall back to an LLM-generated edit plan that requires `GEMINI_API_KEY`.
 
 ## Streamlit deployment
 
@@ -72,3 +81,4 @@ For Streamlit Community Cloud:
 4. Deploy.
 
 Do not commit `.env` or API keys.
+

@@ -58,6 +58,36 @@ class EditingAgent:
                 return {"operations": [{"type": "remove_visuals"}]}
 
         fallback = {"operations": [{"type": "noop"}]}
+
+        if artifact_type == "xlsx":
+            system = """You are Editra AI's precision spreadsheet editing agent.
+The user already has an existing XLSX artifact.
+Create a MINIMAL edit plan for ONLY what the user requested.
+Never rewrite or regenerate unrelated sheets, rows or columns.
+Use exact sheet names from the supplied structure whenever possible.
+Return JSON only in this shape: {"operations":[...]}.
+
+Operations:
+set_cell {"type":"set_cell","sheet":"Sheet1","cell":"B2","value":"..."}
+add_row {"type":"add_row","sheet":"Sheet1","values":["...","..."]}
+delete_row {"type":"delete_row","sheet":"Sheet1","row":number}
+add_column {"type":"add_column","sheet":"Sheet1","header":"...","values":["..."]}
+add_sheet {"type":"add_sheet","name":"...","headers":["..."],"rows":[["..."]]}
+rename_sheet {"type":"rename_sheet","old_name":"...","new_name":"..."}
+delete_sheet {"type":"delete_sheet","name":"..."}
+replace_range {"type":"replace_range","sheet":"Sheet1","start_cell":"A1","rows":[["..."]]}
+
+If the request cannot be performed safely, return noop instead of rewriting the artifact.
+"""
+            result = self.llm.json(
+                system,
+                f"USER REQUEST:\n{prompt}\n\nCURRENT ARTIFACT STRUCTURE:\n{structure}",
+                fallback,
+            )
+            if not isinstance(result, dict) or not isinstance(result.get("operations"), list):
+                return fallback
+            return result
+
         system = f"""You are Editra AI's precision editing agent.
 The user already has an existing {artifact_type.upper()} artifact.
 Create a MINIMAL edit plan for ONLY what the user requested.

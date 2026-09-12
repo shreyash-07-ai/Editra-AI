@@ -9,10 +9,13 @@ class SupervisorAgent:
         p = prompt.lower()
         wants_ppt = any(x in p for x in ["pptx", "ppt ", "powerpoint", "presentation", "slides", "slide deck"])
         wants_doc = any(x in p for x in ["docx", "word document", "document", "report", "proposal"])
+        wants_xlsx = any(x in p for x in ["xlsx", "excel", "spreadsheet"])
         fallback = {
             "intent": "edit" if current_artifact else "create",
             "output_type": current_artifact.get("artifact_type") if current_artifact else (
-                "pptx" if wants_ppt or any(x.get("type") == "pptx" for x in analyses) else "docx"
+                "pptx" if wants_ppt or any(x.get("type") == "pptx" for x in analyses)
+                else "xlsx" if wants_xlsx
+                else "docx"
             ),
             "research": any(w in p for w in ["latest", "current", "research", "web", "trends", "news"]),
             "rag": any(w in p for w in ["company", "internal", "knowledge base", "policy"]),
@@ -36,6 +39,8 @@ make only the requested change."""
             data["operation"] = "modify"
         elif wants_ppt:
             data["output_type"] = "pptx"
+        elif wants_xlsx:
+            data["output_type"] = "xlsx"
         elif wants_doc:
             data["output_type"] = "docx"
         data["instructions"] = data.get("instructions") or prompt

@@ -42,8 +42,8 @@ with st.sidebar:
     st.divider()
     st.markdown("### Upload files")
     uploads = st.file_uploader(
-        "DOCX, PDF, PPTX, PPT, PNG, JPG, JPEG",
-        type=["docx", "pdf", "pptx", "ppt", "png", "jpg", "jpeg"],
+        "DOCX, PDF, PPTX, PPT, XLSX, CSV, PNG, JPG, JPEG",
+        type=["docx", "pdf", "pptx", "ppt", "xlsx", "csv", "png", "jpg", "jpeg"],
         accept_multiple_files=True,
     )
 
@@ -55,11 +55,24 @@ with st.sidebar:
         st.session_state.upload_paths = saved
         st.success(f"{len(saved)} file(s) ready")
 
+    if st.session_state.current_artifact:
+        st.divider()
+        st.markdown(f"### Current version: v{st.session_state.current_artifact['version']}")
+        col_a, col_b = st.columns(2)
+        with col_a:
+            undo_clicked = st.button("↩ Undo last change", use_container_width=True)
+        with col_b:
+            restore_clicked = st.button("⭯ Restore original", use_container_width=True)
+    else:
+        undo_clicked = restore_clicked = False
+
     st.divider()
     st.markdown("### Capabilities")
-    st.caption("• DOCX / PPTX generation")
+    st.caption("• DOCX / PPTX / XLSX generation")
     st.caption("• Conversational editing")
-    st.caption("• PDF / image extraction")
+    st.caption("• PDF / image / spreadsheet extraction")
+    st.caption("• PDF export & format conversion")
+    st.caption("• Undo & restore-original")
     st.caption("• Optional web research")
     st.caption("• Optional Pinecone RAG")
     st.caption("• Version history")
@@ -110,6 +123,10 @@ for i, m in enumerate(st.session_state.messages):
                         st.write(source)
 
 prompt = st.chat_input("Ask Editra to create or modify your document…")
+if undo_clicked:
+    prompt = "undo the last change"
+elif restore_clicked:
+    prompt = "go back to the original"
 
 if prompt:
     st.session_state.messages.append({"role": "user", "content": prompt})
