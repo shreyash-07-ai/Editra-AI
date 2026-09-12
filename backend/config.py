@@ -13,8 +13,10 @@ PREVIEW_DIR = DATA_DIR / "previews"
 for p in (UPLOAD_DIR, OUTPUT_DIR, PREVIEW_DIR):
     p.mkdir(parents=True, exist_ok=True)
 
+# Gemini models. The fallback is useful during free-tier quota exhaustion.
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+GEMINI_FALLBACK_MODEL = os.getenv("GEMINI_FALLBACK_MODEL", "gemini-2.5-flash-lite")
 
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")
 
