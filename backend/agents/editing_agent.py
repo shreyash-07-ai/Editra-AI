@@ -2,7 +2,7 @@ from ..llm import LLM
 
 
 class EditingAgent:
-    """Create safe, minimal operations for conversational artifact editing."""
+    """Translate natural-language requests into minimal edits on the current artifact."""
 
     def __init__(self):
         self.llm = LLM()
@@ -15,18 +15,31 @@ class EditingAgent:
             implementation = any(x in p for x in ["implementation plan", "implementation table", "implementation"])
             describe = any(x in p for x in ["describe the document", "describe document", "document description", "summarize the document", "summary of the document"])
 
-            # A description request is still a document-editing request. Put a
-            # concise description into the existing document instead of returning
-            # the unchanged source file. The generator builds the text from the
-            # actual document structure, so this works even when Gemini is out of quota.
             if describe:
                 return {"operations": [{"type": "insert_description_at_beginning"}]}
 
-            # Reversal MUST be checked before the generic visual branch.
-            if implementation and visual and "replace" in p and "table" in p and any(x in p for x in ["with table", "with the table", "back to table", "to table"]):
-                return {"operations": [{"type": "replace_visual_with_table", "table_index": 0}]}
+            if "executive summary" in p and any(x in p for x in ["add", "create", "insert"]):
+                return {"operations": [{"type": "insert_executive_summary_at_beginning"}]}
+
+            if "competitive analysis" in p and any(x in p for x in ["add", "create", "insert"]):
+                return {"operations": [{
+                    "type": "insert_section_after_heading",
+                    "after_heading": "3. Proposed Solution",
+                    "heading": "Competitive Analysis",
+                    "paragraphs": [
+                        "The proposed solution combines document automation, knowledge retrieval, workflow orchestration, and conversational AI. Competitive positioning should be evaluated against comparable document automation, knowledge management, and AI workflow platforms using capabilities, integration, enterprise controls, and editing fidelity as the primary criteria."
+                    ],
+                }]}
+
+            if "implementation plan" in p and any(x in p for x in ["more detailed", "detail", "expand", "enhance"]):
+                return {"operations": [{"type": "detail_implementation_table", "table_index": 0}]}
+
+            if "success metrics" in p and any(x in p for x in ["shorten", "shorter", "concise", "brief"]):
+                return {"operations": [{"type": "shorten_section_paragraph", "heading": "6. Success Metrics"}]}
 
             if implementation and visual:
+                if "replace" in p and "table" in p and any(x in p for x in ["with table", "with the table", "back to table", "to table"]):
+                    return {"operations": [{"type": "replace_visual_with_table", "table_index": 0}]}
                 if ("replace" in p and "table" in p) or "table to graph" in p or "table into graph" in p or "change the implementation plan table to graph" in p:
                     return {"operations": [{
                         "type": "replace_table_with_chart",
@@ -46,8 +59,9 @@ class EditingAgent:
 
         fallback = {"operations": [{"type": "noop"}]}
         system = f"""You are Editra AI's precision editing agent.
-The user already has a generated {artifact_type.upper()} artifact.
+The user already has an existing {artifact_type.upper()} artifact.
 Create a MINIMAL edit plan for ONLY what the user requested.
+The output must be an edited copy of the current artifact, never a newly recreated document.
 Never rewrite, summarize, reorder, or regenerate unrelated content.
 Preserve all existing wording, sections, tables, slide layouts, styles and visuals
 unless the requested change explicitly affects them.
@@ -57,7 +71,11 @@ Return JSON only in this shape: {{"operations":[...]}}.
 DOCX operations:
 replace_paragraph {{"type":"replace_paragraph","index":number,"text":"new text"}}
 insert_after_heading {{"type":"insert_after_heading","heading":"exact heading","paragraphs":["..."]}}
+insert_section_after_heading {{"type":"insert_section_after_heading","after_heading":"exact heading","heading":"...","paragraphs":["..."]}}
 insert_description_at_beginning {{"type":"insert_description_at_beginning"}}
+insert_executive_summary_at_beginning {{"type":"insert_executive_summary_at_beginning"}}
+shorten_section_paragraph {{"type":"shorten_section_paragraph","heading":"exact heading"}}
+detail_implementation_table {{"type":"detail_implementation_table","table_index":number}}
 append_section {{"type":"append_section","heading":"...","paragraphs":["..."]}}
 delete_paragraph {{"type":"delete_paragraph","index":number}}
 replace_table {{"type":"replace_table","table_index":number,"rows":[["...","..."]]}}
