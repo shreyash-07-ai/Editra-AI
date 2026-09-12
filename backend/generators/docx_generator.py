@@ -16,15 +16,13 @@ from ..llm import LLM
 
 class DOCXGenerator:
     """Edit an existing DOCX in-place on a copied version of the current artifact."""
-
     BACKUP_PREFIX = "EDITRA_TABLE_BACKUP::"
     CHART_CAPTION_PREFIX = "EDITRA_CHART::"
 
     def __init__(self):
         self.llm = LLM()
 
-    def generate(self, output_path, prompt, source_text="", existing=None,
-                 template_path=None, edit_plan=None):
+    def generate(self, output_path, prompt, source_text="", existing=None, template_path=None, edit_plan=None):
         base = existing.get("path") if existing else template_path
         if base and Path(base).exists():
             shutil.copy2(base, output_path)
@@ -109,8 +107,6 @@ class DOCXGenerator:
             elif kind == "remove_visuals":
                 changed |= self._remove_generated_visuals(doc)
 
-        # A valid edit request must result in a changed file. Never silently
-        # return the untouched upload when an operation failed.
         if not changed and operations and not all(op.get("type") == "noop" for op in operations):
             raise ValueError("The requested document operation could not be applied safely.")
 
@@ -119,11 +115,11 @@ class DOCXGenerator:
         return path
 
     def _insert_paragraph_before(self, doc, anchor, text, style="Normal"):
-        el = OxmlElement("w:p")
-        anchor.addprevious(el)
-        p = Paragraph(el, anchor.getparent())
-        p.style = doc.styles[style]
-        p.add_run(text)
+        # Use python-docx's public document API to create the paragraph so its
+        # parent is a valid _Body object with a .part property. Then move the
+        # already-created XML element before the target paragraph.
+        p = doc.add_paragraph(text, style=style)
+        anchor.addprevious(p._p)
         return p
 
     def _insert_description_at_beginning(self, doc):
@@ -161,8 +157,6 @@ class DOCXGenerator:
         for p in doc.paragraphs:
             if p.text.strip().lower() == after_heading.strip().lower():
                 anchor = p._p
-                # Find the end of the current section so the new section is inserted
-                # before the next numbered heading, not randomly at the document end.
                 body = doc._body._element
                 siblings = list(body)
                 idx = siblings.index(anchor)
@@ -173,19 +167,13 @@ class DOCXGenerator:
                         if text and any(text.startswith(f"{n}.") for n in range(1, 30)):
                             break
                     insert_anchor = sibling
-                h_el = OxmlElement("w:p")
-                insert_anchor.addnext(h_el)
-                hp = Paragraph(h_el, p._parent)
-                hp.style = doc.styles["Heading 1"]
-                hp.add_run(heading)
-                anchor2 = h_el
+                h = doc.add_heading(heading, 1)
+                insert_anchor.addnext(h._p)
+                anchor2 = h._p
                 for text in paragraphs:
-                    el = OxmlElement("w:p")
-                    anchor2.addnext(el)
-                    np = Paragraph(el, p._parent)
-                    np.style = doc.styles["Normal"]
-                    np.add_run(text)
-                    anchor2 = el
+                    np = doc.add_paragraph(text)
+                    anchor2.addnext(np._p)
+                    anchor2 = np._p
                 return True
         return False
 
@@ -200,9 +188,10 @@ class DOCXGenerator:
                         original = q.text.strip()
                         if len(original) <= 180:
                             return False
-                        # Preserve the meaning while reducing the existing sentence.
-                        shortened = ("Users can upload an editable document, request a natural-language change, "
-                                      "preview and download the result, and request further changes while maintaining context.")
+                        shortened = (
+                            "Users can upload an editable document, request a natural-language change, "
+                            "preview and download the result, and request further changes while maintaining context."
+                        )
                         q.clear()
                         q.add_run(shortened)
                         return True
@@ -212,8 +201,7 @@ class DOCXGenerator:
         if not (0 <= table_index < len(doc.tables)):
             return False
         table = doc.tables[table_index]
-        headers = [c.text.strip() for c in table.rows[0].cells] if table.rows else []
-        if len(headers) < 4:
+        if not table.rows or len(table.rows[0].cells) < 4:
             return False
         additions = {
             "Document analysis and ingestion": "Analyze source structure, extract content and identify editable elements.",
@@ -221,7 +209,6 @@ class DOCXGenerator:
             "Conversational editing": "Apply iterative natural-language edits to the current artifact without recreating unrelated content.",
             "Validation and versioning": "Validate the output and retain a new version for subsequent edits and traceability.",
         }
-        # Add a Details column while retaining every existing cell.
         table.add_column(Inches(2.6))
         table.cell(0, len(table.rows[0].cells) - 1).text = "Details"
         for r in range(1, len(table.rows)):
@@ -251,12 +238,9 @@ class DOCXGenerator:
             if p.text.strip().lower() == heading.strip().lower():
                 anchor = p._p
                 for text in paragraphs:
-                    el = OxmlElement("w:p")
-                    anchor.addnext(el)
-                    np = Paragraph(el, p._parent)
-                    np.style = doc.styles["Normal"]
-                    np.add_run(text)
-                    anchor = el
+                    np = doc.add_paragraph(text)
+                    anchor.addnext(np._p)
+                    anchor = np._p
                 return bool(paragraphs)
         return False
 
@@ -304,7 +288,6 @@ class DOCXGenerator:
             return False
         _, numeric_col, values = numeric
         labels = [row[1] if len(row) > 1 and row[1] else row[0] for row in rows[1:]]
-
         image_path = self._create_chart_image(labels, values, chart_kind, title or rows[0][numeric_col])
         if not image_path:
             return False
@@ -320,13 +303,11 @@ class DOCXGenerator:
             index += 1
         else:
             index += 1
-
         image_el = OxmlElement("w:p")
         parent.insert(index, image_el)
         ip = Paragraph(image_el, table._parent)
         ip.alignment = WD_ALIGN_PARAGRAPH.CENTER
         ip.add_run().add_picture(image_path, width=Inches(6.1))
-
         cap_el = OxmlElement("w:p")
         parent.insert(index + 1, cap_el)
         cp = Paragraph(cap_el, table._parent)
@@ -346,10 +327,9 @@ class DOCXGenerator:
                 rows = json.loads(raw)
             except Exception:
                 return False
-            children = list(body)
             body.remove(child)
-            # Remove the generated chart and hidden caption following the backup.
-            for sibling in list(body)[i:i + 2]:
+            remaining = list(body)
+            for sibling in remaining[max(0, i - 1):i + 2]:
                 sibling_text = "".join(sibling.itertext())
                 if sibling.xpath('.//w:drawing') or self.CHART_CAPTION_PREFIX in sibling_text:
                     body.remove(sibling)
@@ -368,12 +348,14 @@ class DOCXGenerator:
             text = "".join(child.itertext())
             if self.CHART_CAPTION_PREFIX in text:
                 siblings = list(body)
-                idx = siblings.index(child)
+                try:
+                    idx = siblings.index(child)
+                except ValueError:
+                    continue
                 body.remove(child)
-                if idx > 0:
-                    previous = list(body)[idx - 1] if idx - 1 < len(list(body)) else None
-                    if previous is not None and previous.xpath('.//w:drawing'):
-                        body.remove(previous)
+                siblings = list(body)
+                if idx > 0 and idx - 1 < len(siblings) and siblings[idx - 1].xpath('.//w:drawing'):
+                    body.remove(siblings[idx - 1])
                 changed = True
             elif self.BACKUP_PREFIX in text:
                 body.remove(child)
@@ -383,8 +365,9 @@ class DOCXGenerator:
     def _create_chart_image(self, labels, values, kind, title):
         try:
             import matplotlib.pyplot as plt
-            fd = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
-            fd.close()
+            temp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+            temp.close()
+            path = temp.name
             fig, ax = plt.subplots(figsize=(8, 4.2))
             if kind == "pie":
                 ax.pie(values, labels=labels, autopct="%1.0f%%")
@@ -394,9 +377,9 @@ class DOCXGenerator:
                 ax.tick_params(axis="x", rotation=25)
             ax.set_title(title)
             fig.tight_layout()
-            fig.savefig(fd.name, dpi=180, bbox_inches="tight")
+            fig.savefig(path, dpi=180, bbox_inches="tight")
             plt.close(fig)
-            return fd.name
+            return path
         except Exception:
             return None
 
@@ -407,7 +390,8 @@ class DOCXGenerator:
             section.left_margin = Inches(.8)
             section.right_margin = Inches(.8)
         for p in doc.paragraphs:
-            if not p.text.strip():
+            text = p.text.strip()
+            if not text:
                 continue
             if p.style and p.style.name == "Title":
                 p.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -417,7 +401,8 @@ class DOCXGenerator:
                 p.paragraph_format.space_after = Pt(4)
             elif p.style and p.style.name.startswith("List"):
                 p.alignment = WD_ALIGN_PARAGRAPH.LEFT
-            elif not p.text.startswith(self.BACKUP_PREFIX) and self.CHART_CAPTION_PREFIX not in p.text:
+                p.paragraph_format.space_after = Pt(2)
+            elif not any(x in text for x in [self.CHART_CAPTION_PREFIX, self.BACKUP_PREFIX]):
                 p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
                 p.paragraph_format.space_after = Pt(6)
                 p.paragraph_format.line_spacing = 1.08
