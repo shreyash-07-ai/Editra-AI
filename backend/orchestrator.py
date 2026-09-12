@@ -59,12 +59,7 @@ class EditraOrchestrator:
         return "\n".join(x for x in chunks if x).strip()
 
     def _research_context(self, analyses):
-        """Build a compact topic-oriented context for web search.
-
-        Never send the complete uploaded document to Tavily. The complete
-        document remains available to Gemini for generation; Tavily receives
-        only a small, representative set of titles/headings/terms.
-        """
+        """Build a compact topic-oriented context for web search."""
         pieces = []
         for analysis in analyses:
             kind = analysis.get("type")
@@ -93,15 +88,13 @@ class EditraOrchestrator:
                 if text.strip():
                     pieces.append(text.strip()[:500])
 
-        # Keep enough context to identify the subject while remaining far
-        # below Tavily's hard 1500-character query limit.
         return " | ".join(pieces)[:900]
 
     def run(self, prompt, upload_paths, current_artifact, conversation):
         cid = self._conversation_id(current_artifact)
 
-        # Follow-ups operate on the actual previous artifact. The original upload
-        # is not regenerated, so unrelated content remains untouched.
+        # Every follow-up edits the latest generated artifact. Never regenerate
+        # from the original upload once a working artifact already exists.
         if current_artifact and Path(current_artifact.get("path", "")).exists():
             current_analysis = self._analyze_path(current_artifact["path"])
             artifact_type = current_artifact.get("artifact_type", "docx")
@@ -129,7 +122,57 @@ class EditraOrchestrator:
                 aid, output_path, artifact_type, version, cid, current_analysis, []
             )
 
-        # First request: extract the complete uploaded material as grounding context.
+        # First request: when the user uploads an editable DOCX/PPTX, the
+        # uploaded file itself is the working document. We copy it once and
+        # apply the prompt as a minimal edit plan. We do NOT append a separate
+        # AI-generated document to the source. This is the key document-editing
+        # contract: input document -> prompt -> updated version of that document.
+        editable_upload = next(
+            (
+                p for p in upload_paths
+                if Path(p).suffix.lower() in {".docx", ".pptx"}
+            ),
+            None,
+        )
+        if editable_upload:
+            raw_path = Path(editable_upload)
+            analysis = self._analyze_path(raw_path)
+            artifact_type = "pptx" if raw_path.suffix.lower() == ".pptx" else "docx"
+            plan = self.editing.operation_plan(prompt, artifact_type, analysis)
+            aid, output_path = self.store.new_output(
+                ".pptx" if artifact_type == "pptx" else ".docx", 1
+            )
+
+            if artifact_type == "pptx":
+                self.ppt_gen.generate(
+                    output_path,
+                    prompt,
+                    self._source_text([analysis]),
+                    template_path=str(raw_path),
+                    edit_plan=plan,
+                )
+            else:
+                self.doc_gen.generate(
+                    output_path,
+                    prompt,
+                    self._source_text([analysis]),
+                    template_path=str(raw_path),
+                    edit_plan=plan,
+                )
+
+            return self._finalize(
+                aid,
+                output_path,
+                artifact_type,
+                1,
+                cid,
+                analysis,
+                [raw_path.name],
+            )
+
+        # Non-editable inputs (PDF/images) still use the existing generation
+        # flow to create an editable DOCX, while subsequent prompts edit that
+        # generated artifact instead of returning the source again.
         analyses = []
         source_text = ""
         template_path = None
@@ -148,9 +191,6 @@ class EditraOrchestrator:
         route = self.supervisor.route(prompt, None, analyses)
         sources = [Path(x).name for x in upload_paths]
 
-        # Research uses only a compact representation of the uploaded file.
-        # The full source_text is intentionally NOT sent to Tavily because
-        # Tavily has a strict 1500-character search-query limit.
         if upload_paths or route.get("research"):
             research_context = self._research_context(analyses)
             research_query = (prompt or "").strip()
@@ -182,15 +222,11 @@ class EditraOrchestrator:
                 template_path=template_path,
             )
         else:
-            doc_template = next(
-                (str(p) for p in upload_paths if Path(p).suffix.lower() == ".docx"),
-                None,
-            )
             self.doc_gen.generate(
                 output_path,
                 route["instructions"],
                 source_text,
-                template_path=doc_template,
+                template_path=None,
             )
         return self._finalize(
             aid,
