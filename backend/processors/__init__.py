@@ -77,7 +77,20 @@ def extract_pdf(path):
             if not text.strip():
                 text = _ocr_pdf_page(page)
                 ocr_used = bool(text.strip())
-            pages.append({"number":i, "text":text, "ocr":ocr_used})
+
+            tables = []
+            try:
+                finder = page.find_tables()
+                for ti, table in enumerate(finder.tables):
+                    rows = table.extract()
+                    if rows:
+                        tables.append({"index": ti, "rows": rows})
+            except Exception:
+                # Table detection is an enhancement; normal PDF extraction must
+                # continue when a page has no detectable table layout.
+                pass
+
+            pages.append({"number":i, "text":text, "ocr":ocr_used, "tables":tables})
     finally:
         doc.close()
     return {"type":"pdf", "page_count":len(pages), "pages":pages}
