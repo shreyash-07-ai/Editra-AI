@@ -9,30 +9,57 @@ class RAGAgent:
         self._local_indexes = {}
         self._gemini_client = None
         self._pinecone_client = None
+        self._create_clients()
 
-        # Keep SDK clients alive for the lifetime of the Streamlit session.
-        # Creating Pinecone().Index(...) inline can allow the parent client to
-        # be garbage-collected while the Index still holds its HTTP transport,
-        # producing: "Cannot send a request, as the client has been closed."
-        if GEMINI_API_KEY:
+    def _create_clients(self):
+        """Create SDK clients and retain their owners for the full agent lifetime."""
+        if GEMINI_API_KEY and self._gemini_client is None:
             from google import genai
             self._gemini_client = genai.Client(api_key=GEMINI_API_KEY)
-        if PINECONE_API_KEY:
+        if PINECONE_API_KEY and self._pinecone_client is None:
             from pinecone import Pinecone
             self._pinecone_client = Pinecone(api_key=PINECONE_API_KEY)
+
+    def _reset_pinecone_client(self):
+        """Recover from a stale/closed Pinecone HTTP transport."""
+        if not PINECONE_API_KEY:
+            return None
+        from pinecone import Pinecone
+        self._pinecone_client = Pinecone(api_key=PINECONE_API_KEY)
+        return self._pinecone_client
+
+    def _reset_gemini_client(self):
+        if not GEMINI_API_KEY:
+            return None
+        from google import genai
+        self._gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+        return self._gemini_client
 
     def _embed(self, text, task_type):
         if not self._gemini_client:
             return None
         from google.genai import types
-        result = self._gemini_client.models.embed_content(
-            model=EMBEDDING_MODEL,
-            contents=text,
-            config=types.EmbedContentConfig(
-                task_type=task_type,
-                output_dimensionality=EMBEDDING_DIMENSION,
-            ),
-        )
+        try:
+            result = self._gemini_client.models.embed_content(
+                model=EMBEDDING_MODEL,
+                contents=text,
+                config=types.EmbedContentConfig(
+                    task_type=task_type,
+                    output_dimensionality=EMBEDDING_DIMENSION,
+                ),
+            )
+        except Exception as exc:
+            if "client has been closed" not in str(exc).lower():
+                raise
+            self._reset_gemini_client()
+            result = self._gemini_client.models.embed_content(
+                model=EMBEDDING_MODEL,
+                contents=text,
+                config=types.EmbedContentConfig(
+                    task_type=task_type,
+                    output_dimensionality=EMBEDDING_DIMENSION,
+                ),
+            )
         return result.embeddings[0].values
 
     def embed_documents(self, texts):
@@ -56,27 +83,36 @@ class RAGAgent:
         self._local_indexes[document_id] = records
 
         stored = 0
-        if self.enabled and self._pinecone_client:
-            index = self._pinecone_client.Index(PINECONE_INDEX)
-            index.upsert(
-                vectors=[
-                    {
-                        "id": rid,
-                        "values": vector,
-                        "metadata": {
-                            "document_id": document_id,
-                            "content": chunk["content"],
-                            "section": chunk.get("section", ""),
-                            "page_number": chunk.get("page_number", 0),
-                            "content_type": chunk.get("content_type", "text"),
-                            "source": chunk.get("source", ""),
-                            "metadata": chunk.get("metadata", {}),
-                        },
-                    }
-                    for rid, vector, chunk in records
-                ],
-                namespace=PINECONE_NAMESPACE,
-            )
+        if self.enabled:
+            payload = [
+                {
+                    "id": rid,
+                    "values": vector,
+                    "metadata": {
+                        "document_id": document_id,
+                        "content": chunk["content"],
+                        "section": chunk.get("section", ""),
+                        "page_number": chunk.get("page_number", 0),
+                        "content_type": chunk.get("content_type", "text"),
+                        "source": chunk.get("source", ""),
+                        "metadata": chunk.get("metadata", {}),
+                    },
+                }
+                for rid, vector, chunk in records
+            ]
+            try:
+                self._pinecone_client.Index(PINECONE_INDEX).upsert(
+                    vectors=payload, namespace=PINECONE_NAMESPACE
+                )
+            except Exception as exc:
+                # Pinecone's Index can retain a closed HTTP transport after a
+                # Streamlit rerun. Recreate the owning client once and retry.
+                if "client has been closed" not in str(exc).lower():
+                    raise
+                self._reset_pinecone_client()
+                self._pinecone_client.Index(PINECONE_INDEX).upsert(
+                    vectors=payload, namespace=PINECONE_NAMESPACE
+                )
             stored = len(records)
 
         return {"enabled": self.enabled, "chunks": len(chunks), "stored": stored}
@@ -96,9 +132,8 @@ class RAGAgent:
         return sum(1 for w in words if w in body) / max(1, len(words))
 
     def retrieve(self, query, document_id=None, top_k=6):
-        if self.enabled and self._pinecone_client:
+        if self.enabled:
             qvector = self._embed(query, "RETRIEVAL_QUERY")
-            index = self._pinecone_client.Index(PINECONE_INDEX)
             kwargs = {
                 "vector": qvector,
                 "top_k": top_k,
@@ -108,7 +143,14 @@ class RAGAgent:
             if document_id:
                 kwargs["filter"] = {"document_id": {"$eq": document_id}}
 
-            result = index.query(**kwargs)
+            try:
+                result = self._pinecone_client.Index(PINECONE_INDEX).query(**kwargs)
+            except Exception as exc:
+                if "client has been closed" not in str(exc).lower():
+                    raise
+                self._reset_pinecone_client()
+                result = self._pinecone_client.Index(PINECONE_INDEX).query(**kwargs)
+
             matches = getattr(result, "matches", None)
             if matches is None and isinstance(result, dict):
                 matches = result.get("matches", [])
