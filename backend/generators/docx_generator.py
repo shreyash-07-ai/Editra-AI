@@ -27,7 +27,7 @@ class DOCXGenerator:
         if base and Path(base).exists():
             shutil.copy2(base, output_path)
             if edit_plan:
-                self.apply_edit_plan(output_path, edit_plan, source_text)
+                self.apply_edit_plan(output_path, edit_plan, source_text, prompt)
             else:
                 doc = Document(output_path)
                 addition = self._generate_addition(prompt, source_text)
@@ -66,7 +66,7 @@ class DOCXGenerator:
         for text in addition.get("paragraphs", []):
             doc.add_paragraph(text)
 
-    def apply_edit_plan(self, path, plan, source_text=""):
+    def apply_edit_plan(self, path, plan, source_text="", prompt=""):
         doc = Document(path)
         operations = plan.get("operations", []) if isinstance(plan, dict) else []
         changed = False
@@ -86,11 +86,11 @@ class DOCXGenerator:
             elif kind == "insert_description_at_beginning":
                 changed |= self._insert_description_at_beginning(doc)
             elif kind == "insert_executive_summary_at_beginning":
-                changed |= self._insert_executive_summary(doc)
+                changed |= self._insert_executive_summary(doc, prompt, source_text)
             elif kind == "shorten_section_paragraph":
-                changed |= self._shorten_section(doc, op.get("heading", ""))
+                changed |= self._shorten_section(doc, op.get("heading", ""), prompt)
             elif kind == "detail_implementation_table":
-                changed |= self._detail_implementation_table(doc, int(op.get("table_index", 0)))
+                changed |= self._detail_implementation_table(doc, int(op.get("table_index", 0)), prompt)
             elif kind == "append_section":
                 doc.add_heading(op.get("heading", "Section"), 1)
                 for text in op.get("paragraphs", []):
@@ -122,6 +122,22 @@ class DOCXGenerator:
         anchor.addprevious(p._p)
         return p
 
+    def _find_heading_paragraph(self, doc, heading):
+        target = (heading or "").strip().lower()
+        if not target:
+            return None
+        for p in doc.paragraphs:
+            if p.text.strip().lower() == target:
+                return p
+        # Loosen to a substring match against actual headings so the agent
+        # isn't limited to one exact demo document's heading wording.
+        for p in doc.paragraphs:
+            if p.style and p.style.name.startswith("Heading"):
+                ptext = p.text.strip().lower()
+                if ptext and (target in ptext or ptext in target):
+                    return p
+        return None
+
     def _insert_description_at_beginning(self, doc):
         title = next((p.text.strip() for p in doc.paragraphs if p.text.strip()), "the uploaded document")
         headings = [p.text.strip() for p in doc.paragraphs if p.text.strip() and p.style and p.style.name.startswith("Heading")]
@@ -138,83 +154,143 @@ class DOCXGenerator:
         self._insert_paragraph_before(doc, anchor, summary, "Normal")
         return bool(heading)
 
-    def _insert_executive_summary(self, doc):
+    def _insert_executive_summary(self, doc, prompt="", source_text=""):
         first = next((p for p in doc.paragraphs if p.text.strip()), None)
         if first is None:
             return False
         anchor = first._p
+        text = self._generate_executive_summary(doc, prompt, source_text)
         heading = self._insert_paragraph_before(doc, anchor, "Executive Summary", "Heading 1")
-        text = (
-            "This proposal presents NovaEdge Solutions' approach to intelligent workflow automation, "
-            "analytics, knowledge retrieval, workflow orchestration, and conversational AI. The solution "
-            "is intended to help organizations reduce repetitive work, improve decision-making, and edit "
-            "business artifacts through natural-language interaction while preserving document structure and traceability."
-        )
         self._insert_paragraph_before(doc, anchor, text, "Normal")
         return bool(heading)
 
+    def _generate_executive_summary(self, doc, prompt, source_text):
+        result = self.llm.json(
+            "Write a concise 3-5 sentence executive summary of the document content below, "
+            "grounded only in what it actually contains — do not invent a company name, product, "
+            'or facts that are not present. Return JSON only: {"summary":"..."}.',
+            f"REQUEST:\n{prompt}\nDOCUMENT CONTENT:\n{source_text[:6000]}",
+            None,
+        )
+        if isinstance(result, dict) and result.get("summary"):
+            return result["summary"]
+        # Generic, content-derived fallback for when the LLM is unavailable —
+        # never invents company names or unrelated facts.
+        title = next((p.text.strip() for p in doc.paragraphs if p.text.strip()), "This document")
+        headings = [p.text.strip() for p in doc.paragraphs if p.text.strip() and p.style and p.style.name.startswith("Heading")]
+        summary = f"This document, '{title}', "
+        summary += ("covers " + ", ".join(headings[:6]) + ".") if headings else "presents the content included below."
+        return summary
+
     def _insert_section_after_heading(self, doc, after_heading, heading, paragraphs):
-        for p in doc.paragraphs:
-            if p.text.strip().lower() == after_heading.strip().lower():
-                anchor = p._p
-                body = doc._body._element
-                siblings = list(body)
-                idx = siblings.index(anchor)
-                insert_anchor = anchor
-                for sibling in siblings[idx + 1:]:
-                    if sibling.tag.endswith("}p"):
-                        text = "".join(sibling.itertext()).strip()
-                        if text and any(text.startswith(f"{n}.") for n in range(1, 30)):
-                            break
-                    insert_anchor = sibling
-                h = doc.add_heading(heading, 1)
-                insert_anchor.addnext(h._p)
-                anchor2 = h._p
-                for text in paragraphs:
-                    np = doc.add_paragraph(text)
-                    anchor2.addnext(np._p)
-                    anchor2 = np._p
+        anchor_p = self._find_heading_paragraph(doc, after_heading)
+        if anchor_p is None:
+            # Heading not found in this document: append the requested section
+            # at the end instead of silently failing the whole request.
+            doc.add_heading(heading or "Section", 1)
+            for text in paragraphs:
+                doc.add_paragraph(text)
+            return True
+        anchor = anchor_p._p
+        body = doc._body._element
+        siblings = list(body)
+        idx = siblings.index(anchor)
+        insert_anchor = anchor
+        for sibling in siblings[idx + 1:]:
+            if sibling.tag.endswith("}p"):
+                text = "".join(sibling.itertext()).strip()
+                if text and any(text.startswith(f"{n}.") for n in range(1, 30)):
+                    break
+            insert_anchor = sibling
+        h = doc.add_heading(heading, 1)
+        insert_anchor.addnext(h._p)
+        anchor2 = h._p
+        for text in paragraphs:
+            np = doc.add_paragraph(text)
+            anchor2.addnext(np._p)
+            anchor2 = np._p
+        return True
+
+    def _find_heading_index(self, paragraphs, heading):
+        target = (heading or "").strip().lower()
+        if not target:
+            return None
+        for i, p in enumerate(paragraphs):
+            if p.text.strip().lower() == target:
+                return i
+        for i, p in enumerate(paragraphs):
+            if p.style and p.style.name.startswith("Heading"):
+                ptext = p.text.strip().lower()
+                if ptext and (target in ptext or ptext in target):
+                    return i
+        return None
+
+    def _shorten_section(self, doc, heading, prompt=""):
+        # Look up the heading and iterate within a single doc.paragraphs call:
+        # python-docx builds a fresh list of wrapper objects on every access,
+        # so comparing/indexing objects captured from two separate calls fails.
+        paragraphs = doc.paragraphs
+        target_i = self._find_heading_index(paragraphs, heading)
+        if target_i is None:
+            return False
+        for q in paragraphs[target_i + 1:]:
+            if q.style and q.style.name.startswith("Heading"):
+                break
+            if q.text.strip():
+                original = q.text.strip()
+                if len(original) <= 180:
+                    return False
+                shortened = self._shorten_text(prompt, original)
+                q.clear()
+                q.add_run(shortened)
                 return True
         return False
 
-    def _shorten_section(self, doc, heading):
-        paragraphs = doc.paragraphs
-        for i, p in enumerate(paragraphs):
-            if p.text.strip().lower() == heading.strip().lower():
-                for q in paragraphs[i + 1:]:
-                    if q.style and q.style.name.startswith("Heading"):
-                        break
-                    if q.text.strip():
-                        original = q.text.strip()
-                        if len(original) <= 180:
-                            return False
-                        shortened = (
-                            "Users can upload an editable document, request a natural-language change, "
-                            "preview and download the result, and request further changes while maintaining context."
-                        )
-                        q.clear()
-                        q.add_run(shortened)
-                        return True
-        return False
+    def _shorten_text(self, prompt, original):
+        result = self.llm.json(
+            "Rewrite the paragraph below to be noticeably shorter while preserving its actual "
+            'meaning and facts — do not add new information. Return JSON only: {"text":"..."}.',
+            f"REQUEST:\n{prompt}\nPARAGRAPH:\n{original}",
+            None,
+        )
+        if isinstance(result, dict) and result.get("text"):
+            return result["text"]
+        # Generic fallback without an LLM: keep only the first sentence or two
+        # of the actual paragraph rather than substituting unrelated text.
+        sentences = re.split(r"(?<=[.!?])\s+", original)
+        shortened = " ".join(sentences[:2]).strip()
+        return shortened if shortened else original[:180].rstrip() + "…"
 
-    def _detail_implementation_table(self, doc, table_index):
+    def _detail_implementation_table(self, doc, table_index, prompt=""):
         if not (0 <= table_index < len(doc.tables)):
             return False
         table = doc.tables[table_index]
-        if not table.rows or len(table.rows[0].cells) < 4:
+        if not table.rows or len(table.rows[0].cells) < 2:
             return False
-        additions = {
-            "Document analysis and ingestion": "Analyze source structure, extract content and identify editable elements.",
-            "Artifact generation": "Generate editable artifacts while preserving the supplied document or template.",
-            "Conversational editing": "Apply iterative natural-language edits to the current artifact without recreating unrelated content.",
-            "Validation and versioning": "Validate the output and retain a new version for subsequent edits and traceability.",
-        }
+        rows = [[cell.text.strip() for cell in row.cells] for row in table.rows]
+        details = self._generate_table_details(prompt, rows)
         table.add_column(Inches(2.6))
         table.cell(0, len(table.rows[0].cells) - 1).text = "Details"
         for r in range(1, len(table.rows)):
-            activity = table.cell(r, 1).text.strip() if len(table.rows[r].cells) > 1 else ""
-            table.cell(r, len(table.rows[r].cells) - 1).text = additions.get(activity, "Detailed execution and validation activities for this phase.")
+            activity = table.cell(r, 1).text.strip() if len(table.rows[r].cells) > 1 else table.cell(r, 0).text.strip()
+            table.cell(r, len(table.rows[r].cells) - 1).text = details.get(
+                str(r), f"Detailed execution and validation activities for {activity or 'this phase'}."
+            )
         return True
+
+    def _generate_table_details(self, prompt, rows):
+        if len(rows) < 2:
+            return {}
+        result = self.llm.json(
+            "For each data row (skip the header row) of the table below, write one detailed "
+            "sentence describing that specific row, grounded only in its actual values. "
+            'Return JSON only: {"details": {"<row_index_starting_at_1>":"...", ...}}.',
+            f"REQUEST:\n{prompt}\nTABLE ROWS (row 0 is the header):\n{json.dumps(rows, ensure_ascii=False)}",
+            {"details": {}},
+        )
+        if isinstance(result, dict) and isinstance(result.get("details"), dict):
+            return {str(k): v for k, v in result["details"].items()}
+        return {}
 
     def _replace_paragraph(self, doc, index, text):
         if 0 <= index < len(doc.paragraphs):
@@ -234,14 +310,20 @@ class DOCXGenerator:
         return False
 
     def _insert_after_heading(self, doc, heading, paragraphs):
-        for p in doc.paragraphs:
-            if p.text.strip().lower() == heading.strip().lower():
-                anchor = p._p
-                for text in paragraphs:
-                    np = doc.add_paragraph(text)
-                    anchor.addnext(np._p)
-                    anchor = np._p
-                return bool(paragraphs)
+        p = self._find_heading_paragraph(doc, heading)
+        if p is not None:
+            anchor = p._p
+            for text in paragraphs:
+                np = doc.add_paragraph(text)
+                anchor.addnext(np._p)
+                anchor = np._p
+            return bool(paragraphs)
+        if paragraphs:
+            # Heading not found in this document: append at the end rather
+            # than silently failing the whole request.
+            for text in paragraphs:
+                doc.add_paragraph(text)
+            return True
         return False
 
     def _replace_table(self, doc, table_index, rows):

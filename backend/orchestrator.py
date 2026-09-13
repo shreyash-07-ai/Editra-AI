@@ -215,6 +215,73 @@ class EditraOrchestrator:
         self.store.register(artifact)
         return {"message": f"Restored the original file — **{artifact['filename']}**.", "artifact": artifact, "sources": [original.name]}
 
+    def _export_pdf(self, working, cid, version):
+        aid, output_path = self.store.new_output(".pdf", version)
+        if not convert_to_pdf(working["path"], output_path):
+            return {
+                "message": "I couldn't generate a PDF because LibreOffice isn't available in this "
+                "environment. The editable version is still ready to download; install LibreOffice "
+                "(`soffice` on PATH) to enable PDF export."
+            }
+        ok, checks = self.validation.validate(output_path, "pdf")
+        if not ok:
+            return {"message": "I generated the PDF, but validation failed: " + "; ".join(checks)}
+        artifact = {
+            "id": aid, "conversation_id": cid, "filename": output_path.name, "path": str(output_path),
+            "artifact_type": "pdf", "version": version, "mime": MIME.get(".pdf"),
+            "preview_type": "text", "preview": "PDF export of the current version.",
+            "structure": working.get("structure", {}), "sources": working.get("sources", []),
+            "editable_source": working,
+        }
+        self.store.register(artifact)
+        return {
+            "message": f"Done — I exported the current version as **{artifact['filename']}** "
+            f"(version {version}). Further edits will keep applying to the editable "
+            f"{working['artifact_type'].upper()}.",
+            "artifact": artifact,
+            "sources": artifact["sources"],
+        }
+
+    def _export_csv(self, working, cid, version):
+        if working.get("artifact_type") != "xlsx":
+            return {"message": "CSV export is only available from a spreadsheet (XLSX) artifact."}
+        aid, output_path = self.store.new_output(".csv", version)
+        try:
+            self.xlsx_gen.export_csv(working["path"], output_path)
+        except Exception as exc:
+            return {"message": f"I couldn't export to CSV: {exc}"}
+        ok, checks = self.validation.validate(output_path, "csv")
+        if not ok:
+            return {"message": "I generated the CSV, but validation failed: " + "; ".join(checks)}
+        artifact = {
+            "id": aid, "conversation_id": cid, "filename": output_path.name, "path": str(output_path),
+            "artifact_type": "csv", "version": version, "mime": MIME.get(".csv"),
+            "preview_type": "text", "preview": "CSV export of the current version.",
+            "structure": working.get("structure", {}), "sources": working.get("sources", []),
+            "editable_source": working,
+        }
+        self.store.register(artifact)
+        return {
+            "message": f"Done — I exported the current version as **{artifact['filename']}** (version {version}).",
+            "artifact": artifact,
+            "sources": artifact["sources"],
+        }
+
+    def _is_noop_plan(self, plan):
+        ops = plan.get("operations", []) if isinstance(plan, dict) else []
+        return bool(ops) and all(op.get("type") == "noop" for op in ops)
+
+    def _noop_message(self, artifact_type):
+        hint = {
+            "pptx": "the exact slide number, its title, or the text on it",
+            "xlsx": "the exact sheet name, cell, or column",
+        }.get(artifact_type, "the exact heading, sentence, or section")
+        return (
+            "I couldn't confidently identify a specific, safe edit for that request without risking "
+            f"unrelated changes. Could you point to {hint} you'd like changed? "
+            "Your current version is unchanged."
+        )
+
     def _handle_format_export(self, prompt_lower, prompt, current_artifact, cid):
         working = self._effective_working_artifact(current_artifact)
         if not working or not Path(working.get("path", "")).exists():
@@ -226,56 +293,10 @@ class EditraOrchestrator:
         version = current_artifact.get("version", working.get("version", 0)) + 1
 
         if target == "pdf":
-            aid, output_path = self.store.new_output(".pdf", version)
-            if not convert_to_pdf(working["path"], output_path):
-                return {
-                    "message": "I couldn't generate a PDF because LibreOffice isn't available in this "
-                    "environment. The editable version is still ready to download; install LibreOffice "
-                    "(`soffice` on PATH) to enable PDF export."
-                }
-            ok, checks = self.validation.validate(output_path, "pdf")
-            if not ok:
-                return {"message": "I generated the PDF, but validation failed: " + "; ".join(checks)}
-            artifact = {
-                "id": aid, "conversation_id": cid, "filename": output_path.name, "path": str(output_path),
-                "artifact_type": "pdf", "version": version, "mime": MIME.get(".pdf"),
-                "preview_type": "text", "preview": "PDF export of the current version.",
-                "structure": working.get("structure", {}), "sources": working.get("sources", []),
-                "editable_source": working,
-            }
-            self.store.register(artifact)
-            return {
-                "message": f"Done — I exported the current version as **{artifact['filename']}** "
-                f"(version {version}). Further edits will keep applying to the editable "
-                f"{working['artifact_type'].upper()}.",
-                "artifact": artifact,
-                "sources": artifact["sources"],
-            }
+            return self._export_pdf(working, cid, version)
 
         if target == "csv":
-            if working.get("artifact_type") != "xlsx":
-                return {"message": "CSV export is only available from a spreadsheet (XLSX) artifact."}
-            aid, output_path = self.store.new_output(".csv", version)
-            try:
-                self.xlsx_gen.export_csv(working["path"], output_path)
-            except Exception as exc:
-                return {"message": f"I couldn't export to CSV: {exc}"}
-            ok, checks = self.validation.validate(output_path, "csv")
-            if not ok:
-                return {"message": "I generated the CSV, but validation failed: " + "; ".join(checks)}
-            artifact = {
-                "id": aid, "conversation_id": cid, "filename": output_path.name, "path": str(output_path),
-                "artifact_type": "csv", "version": version, "mime": MIME.get(".csv"),
-                "preview_type": "text", "preview": "CSV export of the current version.",
-                "structure": working.get("structure", {}), "sources": working.get("sources", []),
-                "editable_source": working,
-            }
-            self.store.register(artifact)
-            return {
-                "message": f"Done — I exported the current version as **{artifact['filename']}** (version {version}).",
-                "artifact": artifact,
-                "sources": artifact["sources"],
-            }
+            return self._export_csv(working, cid, version)
 
         # Structural conversion between editable formats (docx <-> pptx <-> xlsx).
         try:
@@ -320,7 +341,13 @@ class EditraOrchestrator:
                 return {"message": f"I couldn't read the current version to edit it: {exc}. "
                         "Your existing version is unchanged."}
             artifact_type = working.get("artifact_type", "docx")
-            plan = self.editing.operation_plan(prompt, artifact_type, current_analysis)
+            try:
+                plan = self.editing.operation_plan(prompt, artifact_type, current_analysis)
+            except Exception as exc:
+                return {"message": f"I couldn't analyze that edit request: {exc} "
+                        "Your current version is unchanged."}
+            if self._is_noop_plan(plan):
+                return {"message": self._noop_message(artifact_type)}
             version = current_artifact.get("version", 0) + 1
             ext = {"pptx": ".pptx", "xlsx": ".xlsx"}.get(artifact_type, ".docx")
             aid, output_path = self.store.new_output(ext, version)
@@ -362,15 +389,58 @@ class EditraOrchestrator:
             self.store.set_original(cid, raw_path)
             suffix = raw_path.suffix.lower()
             if suffix == ".pptx":
-                artifact_type = "pptx"
+                source_type = "pptx"
             elif suffix in (".xlsx", ".csv"):
-                artifact_type = "xlsx"
+                source_type = "xlsx"
             else:
-                artifact_type = "docx"
-            plan = self.editing.operation_plan(prompt, artifact_type, analysis)
+                source_type = "docx"
+
+            # Honor an explicit target format in the very first prompt too, e.g.
+            # uploading a DOCX and asking to "convert this into a PowerPoint" or
+            # "make this a PPT" — not just on later follow-up prompts.
+            requested_format = self._detect_target_format(prompt_lower, source_type)
+            source_text = self._source_text([analysis])
+
+            if requested_format and requested_format in EDITABLE_TYPES and requested_format != source_type:
+                ext = f".{requested_format}"
+                aid, output_path = self.store.new_output(ext, 1)
+                try:
+                    if requested_format == "pptx":
+                        self.ppt_gen.generate(output_path, prompt, source_text)
+                    elif requested_format == "xlsx":
+                        self.xlsx_gen.generate(output_path, prompt, source_text)
+                    else:
+                        self.doc_gen.generate(output_path, prompt, source_text)
+                except Exception as exc:
+                    return {"message": f"I couldn't convert '{raw_path.name}' to {requested_format.upper()}: {exc}"}
+                return self._finalize(aid, output_path, requested_format, 1, cid, analysis, [raw_path.name])
+
+            if requested_format in ("pdf", "csv"):
+                # First message asks to directly export the upload (e.g. "give me
+                # a PDF of this resume"): register the upload itself as v1, then
+                # export it as v2 so future edits still target the editable v1.
+                ext = {"pptx": ".pptx", "xlsx": ".xlsx"}.get(source_type, ".docx")
+                aid1, output_path1 = self.store.new_output(ext, 1)
+                if suffix == ".csv":
+                    self.xlsx_gen.generate(output_path1, "", "", template_path=str(raw_path))
+                else:
+                    shutil.copy2(raw_path, output_path1)
+                v1 = self._finalize(aid1, output_path1, source_type, 1, cid, analysis, [raw_path.name])
+                if not v1.get("artifact"):
+                    return v1
+                working = v1["artifact"]
+                export = self._export_pdf(working, cid, 2) if requested_format == "pdf" else self._export_csv(working, cid, 2)
+                return export
+
+            artifact_type = source_type
+            try:
+                plan = self.editing.operation_plan(prompt, artifact_type, analysis)
+            except Exception as exc:
+                return {"message": f"I couldn't analyze that edit request: {exc}"}
+            if self._is_noop_plan(plan):
+                return {"message": self._noop_message(artifact_type)}
             ext = {"pptx": ".pptx", "xlsx": ".xlsx"}.get(artifact_type, ".docx")
             aid, output_path = self.store.new_output(ext, 1)
-            source_text = self._source_text([analysis])
 
             try:
                 if artifact_type == "pptx":
@@ -418,7 +488,10 @@ class EditraOrchestrator:
             return {"message": f"I couldn't read the uploaded file(s): {failures}. "
                     "They may be corrupted or in an unsupported format."}
 
-        route = self.supervisor.route(prompt, None, analyses)
+        try:
+            route = self.supervisor.route(prompt, None, analyses)
+        except Exception as exc:
+            return {"message": f"I couldn't analyze that request: {exc}"}
         sources = [Path(x).name for x in upload_paths]
 
         if upload_paths or route.get("research"):

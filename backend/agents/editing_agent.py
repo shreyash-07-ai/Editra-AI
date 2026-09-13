@@ -21,16 +21,6 @@ class EditingAgent:
             if "executive summary" in p and any(x in p for x in ["add", "create", "insert"]):
                 return {"operations": [{"type": "insert_executive_summary_at_beginning"}]}
 
-            if "competitive analysis" in p and any(x in p for x in ["add", "create", "insert"]):
-                return {"operations": [{
-                    "type": "insert_section_after_heading",
-                    "after_heading": "3. Proposed Solution",
-                    "heading": "Competitive Analysis",
-                    "paragraphs": [
-                        "The proposed solution combines document automation, knowledge retrieval, workflow orchestration, and conversational AI. Competitive positioning should be evaluated against comparable document automation, knowledge management, and AI workflow platforms using capabilities, integration, enterprise controls, and editing fidelity as the primary criteria."
-                    ],
-                }]}
-
             if "implementation plan" in p and any(x in p for x in ["more detailed", "detail", "expand", "enhance"]):
                 return {"operations": [{"type": "detail_implementation_table", "table_index": 0}]}
 

@@ -1,4 +1,5 @@
 from ..llm import LLM
+import re
 
 
 class SupervisorAgent:
@@ -7,9 +8,9 @@ class SupervisorAgent:
 
     def route(self, prompt, current_artifact, analyses):
         p = prompt.lower()
-        wants_ppt = any(x in p for x in ["pptx", "ppt ", "powerpoint", "presentation", "slides", "slide deck"])
-        wants_doc = any(x in p for x in ["docx", "word document", "document", "report", "proposal"])
-        wants_xlsx = any(x in p for x in ["xlsx", "excel", "spreadsheet"])
+        wants_ppt = bool(re.search(r"\bppts?\b|\bpptx\b|powerpoint|presentation|\bslides?\b|slide deck", p))
+        wants_xlsx = bool(re.search(r"\bxlsx\b|\bexcel\b|spreadsheet", p))
+        wants_doc = bool(re.search(r"\bdocx\b|word document|\bdocument\b|\breport\b|\bproposal\b", p))
         fallback = {
             "intent": "edit" if current_artifact else "create",
             "output_type": current_artifact.get("artifact_type") if current_artifact else (
@@ -24,10 +25,11 @@ class SupervisorAgent:
             "instructions": prompt,
         }
         system = """You are Editra AI's supervisor. Return JSON only with:
-intent (create/edit), output_type (docx/pptx), research (boolean), rag (boolean),
+intent (create/edit), output_type (docx/pptx/xlsx), research (boolean), rag (boolean),
 operation (generate/modify/convert), target (string), instructions (string).
 For explicit PPTX, PowerPoint, presentation or slide-deck requests choose pptx.
 For explicit DOCX or Word requests choose docx.
+For explicit XLSX, Excel or spreadsheet requests choose xlsx.
 When editing, keep the current artifact type. Preserve the existing artifact and
 make only the requested change."""
         data = self.llm.json(system, prompt, fallback)
