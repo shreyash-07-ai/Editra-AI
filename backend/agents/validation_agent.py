@@ -21,6 +21,10 @@ class ValidationAgent:
                 with open(p, newline="", encoding="utf-8-sig", errors="replace") as f:
                     if not f.readline():
                         return False, ["CSV file is empty."]
+            elif artifact_type == "txt":
+                text = p.read_text(encoding="utf-8", errors="replace")
+                if not text.strip():
+                    return False, ["TXT file is empty."]
             elif artifact_type == "pdf":
                 import fitz
                 doc = fitz.open(str(p))

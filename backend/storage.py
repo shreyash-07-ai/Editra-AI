@@ -1,6 +1,5 @@
 from pathlib import Path
-import shutil, uuid, json
-from datetime import datetime
+import uuid
 from .config import UPLOAD_DIR, OUTPUT_DIR, PREVIEW_DIR
 
 MIME = {
@@ -9,6 +8,7 @@ MIME = {
     ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     ".csv": "text/csv",
     ".pdf": "application/pdf",
+    ".txt": "text/plain",
 }
 
 class ArtifactStore:
@@ -23,8 +23,6 @@ class ArtifactStore:
         return path
 
     def set_original(self, conversation_id, path):
-        """Remember the first uploaded file for a conversation so the user can
-        later ask to go back to the original, even after many edited versions."""
         self.originals.setdefault(conversation_id, str(path))
 
     def original_path(self, conversation_id):
