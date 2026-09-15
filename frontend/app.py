@@ -9,7 +9,7 @@ from backend.query_pipeline import QueryDrivenPipeline
 from backend.storage import ArtifactStore
 
 st.set_page_config(page_title="Editra AI", page_icon="✦", layout="wide", initial_sidebar_state="collapsed")
-css = Path(__file__).with_name("ui_theme_v3.css")
+css = Path(__file__).with_name("editra_theme.css")
 if css.exists():
     st.markdown(f"<style>{css.read_text()}</style>", unsafe_allow_html=True)
 
