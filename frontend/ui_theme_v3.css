@@ -11,8 +11,7 @@ section[data-testid="stSidebar"] { display:none !important; }
 
 /* =========================================================
    NEW CHAT BUTTON — v3 FIX
-   The button must be inside st.container(key="new_chat_button")
-   in app.py. Streamlit exposes that container as .st-key-new_chat_button.
+   The button is inside st.container(key="new_chat_button") in app.py.
    ========================================================= */
 .st-key-new_chat_button,
 .st-key-new_chat_button .stButton { width:100% !important; }
@@ -53,7 +52,7 @@ section[data-testid="stSidebar"] { display:none !important; }
     opacity:1 !important;
 }
 
-/* Keep the old wrapper selector only as a fallback. */
+/* Fallback for the previous wrapper markup. */
 .new-chat-wrap .stButton > button,
 .new-chat-wrap .stButton > button:hover,
 .new-chat-wrap .stButton > button:focus,
@@ -63,6 +62,45 @@ section[data-testid="stSidebar"] { display:none !important; }
     border:1px solid #171d2d !important;
     color:#ffffff !important;
     -webkit-text-fill-color:#ffffff !important;
+}
+
+/* =========================================================
+   DOWNLOAD BUTTONS — force every part of the button to white
+   ========================================================= */
+[data-testid="stDownloadButton"] button,
+[data-testid="stDownloadButton"] button:hover,
+[data-testid="stDownloadButton"] button:focus,
+[data-testid="stDownloadButton"] button:focus-visible,
+[data-testid="stDownloadButton"] button:active,
+[data-testid="stDownloadButton"] button:disabled {
+    width:100% !important;
+    min-height:42px !important;
+    background:#171d2d !important;
+    background-color:#171d2d !important;
+    border:1px solid #171d2d !important;
+    border-color:#171d2d !important;
+    border-radius:10px !important;
+    color:#ffffff !important;
+    -webkit-text-fill-color:#ffffff !important;
+    font-weight:750 !important;
+    box-shadow:none !important;
+    opacity:1 !important;
+    filter:none !important;
+    transform:none !important;
+    transition:none !important;
+}
+
+[data-testid="stDownloadButton"] button > div,
+[data-testid="stDownloadButton"] button > div > div,
+[data-testid="stDownloadButton"] button p,
+[data-testid="stDownloadButton"] button span,
+[data-testid="stDownloadButton"] button svg,
+[data-testid="stDownloadButton"] button svg path {
+    color:#ffffff !important;
+    -webkit-text-fill-color:#ffffff !important;
+    fill:#ffffff !important;
+    stroke:#ffffff !important;
+    opacity:1 !important;
 }
 
 .editra-badge { display:inline-block; padding:.42rem .85rem; border-radius:999px; background:#e6ddff; color:#5d3bd0 !important; font-weight:800; font-size:.8rem; margin-bottom:.8rem; }
