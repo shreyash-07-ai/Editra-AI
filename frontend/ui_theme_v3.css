@@ -9,71 +9,59 @@ section[data-testid="stSidebar"] { display:none !important; }
 .editra-brand span { color:#6d45e8 !important; }
 .brand-sub { color:#707b9d !important; font-size:.78rem; }
 
-/* =========================================================
-   NEW CHAT BUTTON — v3 FIX
-   The button is inside st.container(key="new_chat_button") in app.py.
-   ========================================================= */
+/* New Chat */
 .st-key-new_chat_button,
 .st-key-new_chat_button .stButton { width:100% !important; }
-
 .st-key-new_chat_button button,
 .st-key-new_chat_button button:hover,
 .st-key-new_chat_button button:focus,
 .st-key-new_chat_button button:focus-visible,
 .st-key-new_chat_button button:active,
 .st-key-new_chat_button button:disabled {
-    width:100% !important;
-    min-height:42px !important;
-    background:#171d2d !important;
-    background-color:#171d2d !important;
-    border:1px solid #171d2d !important;
-    border-color:#171d2d !important;
-    border-radius:10px !important;
-    color:#ffffff !important;
-    -webkit-text-fill-color:#ffffff !important;
-    font-weight:750 !important;
-    box-shadow:none !important;
-    opacity:1 !important;
-    filter:none !important;
-    transform:none !important;
-    transition:none !important;
+    width:100% !important; min-height:42px !important;
+    background:#171d2d !important; background-color:#171d2d !important;
+    border:1px solid #171d2d !important; border-color:#171d2d !important;
+    border-radius:10px !important; color:#ffffff !important;
+    -webkit-text-fill-color:#ffffff !important; font-weight:750 !important;
+    box-shadow:none !important; opacity:1 !important; filter:none !important;
+    transform:none !important; transition:none !important;
 }
-
 .st-key-new_chat_button button > div,
 .st-key-new_chat_button button > div > div,
 .st-key-new_chat_button button p,
 .st-key-new_chat_button button span,
 .st-key-new_chat_button button svg,
-.st-key-new_chat_button button svg path {
-    color:#ffffff !important;
-    -webkit-text-fill-color:#ffffff !important;
-    fill:#ffffff !important;
-    stroke:#ffffff !important;
-    opacity:1 !important;
-}
+.st-key-new_chat_button button svg path { color:#ffffff !important; -webkit-text-fill-color:#ffffff !important; fill:#ffffff !important; stroke:#ffffff !important; opacity:1 !important; }
 
-/* Fallback for the previous wrapper markup. */
-.new-chat-wrap .stButton > button,
-.new-chat-wrap .stButton > button:hover,
-.new-chat-wrap .stButton > button:focus,
-.new-chat-wrap .stButton > button:active {
-    background:#171d2d !important;
-    background-color:#171d2d !important;
-    border:1px solid #171d2d !important;
-    color:#ffffff !important;
-    -webkit-text-fill-color:#ffffff !important;
-}
-
-/* =========================================================
-   DOWNLOAD BUTTONS — force every part of the button to white
-   ========================================================= */
+/* Download button */
 [data-testid="stDownloadButton"] button,
 [data-testid="stDownloadButton"] button:hover,
 [data-testid="stDownloadButton"] button:focus,
 [data-testid="stDownloadButton"] button:focus-visible,
 [data-testid="stDownloadButton"] button:active,
 [data-testid="stDownloadButton"] button:disabled {
-    width:100% !important;
+    width:100% !important; min-height:42px !important;
+    background:#171d2d !important; background-color:#171d2d !important;
+    border:1px solid #171d2d !important; border-color:#171d2d !important;
+    border-radius:10px !important; color:#ffffff !important;
+    -webkit-text-fill-color:#ffffff !important; font-weight:750 !important;
+    box-shadow:none !important; opacity:1 !important; filter:none !important;
+    transform:none !important; transition:none !important;
+}
+[data-testid="stDownloadButton"] button > div,
+[data-testid="stDownloadButton"] button > div > div,
+[data-testid="stDownloadButton"] button p,
+[data-testid="stDownloadButton"] button span,
+[data-testid="stDownloadButton"] button svg,
+[data-testid="stDownloadButton"] button svg path { color:#ffffff !important; -webkit-text-fill-color:#ffffff !important; fill:#ffffff !important; stroke:#ffffff !important; opacity:1 !important; }
+
+/* Undo + Restore buttons: static dark buttons with clearly visible white text */
+.stButton button,
+.stButton button:hover,
+.stButton button:focus,
+.stButton button:focus-visible,
+.stButton button:active,
+.stButton button:disabled {
     min-height:42px !important;
     background:#171d2d !important;
     background-color:#171d2d !important;
@@ -89,32 +77,18 @@ section[data-testid="stSidebar"] { display:none !important; }
     transform:none !important;
     transition:none !important;
 }
-
-[data-testid="stDownloadButton"] button > div,
-[data-testid="stDownloadButton"] button > div > div,
-[data-testid="stDownloadButton"] button p,
-[data-testid="stDownloadButton"] button span,
-[data-testid="stDownloadButton"] button svg,
-[data-testid="stDownloadButton"] button svg path {
+.stButton button > div,
+.stButton button > div > div,
+.stButton button p,
+.stButton button span,
+.stButton button svg,
+.stButton button svg path {
     color:#ffffff !important;
     -webkit-text-fill-color:#ffffff !important;
     fill:#ffffff !important;
     stroke:#ffffff !important;
     opacity:1 !important;
 }
-
-.editra-badge { display:inline-block; padding:.42rem .85rem; border-radius:999px; background:#e6ddff; color:#5d3bd0 !important; font-weight:800; font-size:.8rem; margin-bottom:.8rem; }
-.editra-title { font-size:2.8rem; line-height:1.08; font-weight:850; letter-spacing:-.05em; color:#18213f !important; }
-.editra-title span { color:#6d45e8 !important; }
-.editra-subtitle { color:#5f6d91 !important; font-size:1.02rem; margin:.55rem 0 1.7rem; }
-
-.workspace-card { background:rgba(255,255,255,.72); backdrop-filter:blur(14px); border:1px solid rgba(255,255,255,.95); border-radius:22px; padding:1.45rem; box-shadow:0 18px 50px rgba(78,61,140,.10); }
-.section-title { color:#18213f !important; font-size:1.08rem; font-weight:820; margin-bottom:.25rem; }
-.section-note { color:#61709a !important; font-size:.9rem; margin-bottom:.85rem; }
-.draft-title { margin-top:1.5rem; }
-.uploaded-list { margin:.8rem 0 1rem; }
-.file-item { display:flex; align-items:center; justify-content:space-between; background:#eee8ff; border:1px solid #d8ccff; border-radius:11px; padding:.65rem .8rem; color:#453293 !important; }
-.file-item span { color:#21845b !important; font-size:.78rem; font-weight:750; }
 
 /* Upload */
 [data-testid="stFileUploader"] section { background:linear-gradient(145deg,#faf8ff,#eee8ff) !important; border:2px dashed #b8a4ff !important; border-radius:16px !important; min-height:145px; }
@@ -124,20 +98,7 @@ section[data-testid="stSidebar"] { display:none !important; }
 [data-testid="stFileUploader"] button:focus,
 [data-testid="stFileUploader"] button:focus-visible,
 [data-testid="stFileUploader"] button:active,
-[data-testid="stFileUploader"] button:disabled {
-    background:#171d2d !important;
-    background-color:#171d2d !important;
-    border:1px solid #171d2d !important;
-    border-color:#171d2d !important;
-    color:#ffffff !important;
-    -webkit-text-fill-color:#ffffff !important;
-    border-radius:9px !important;
-    box-shadow:none !important;
-    opacity:1 !important;
-    filter:none !important;
-    transform:none !important;
-    transition:none !important;
-}
+[data-testid="stFileUploader"] button:disabled { background:#171d2d !important; background-color:#171d2d !important; border:1px solid #171d2d !important; border-color:#171d2d !important; color:#ffffff !important; -webkit-text-fill-color:#ffffff !important; border-radius:9px !important; box-shadow:none !important; opacity:1 !important; filter:none !important; transform:none !important; transition:none !important; }
 [data-testid="stFileUploader"] button > div,
 [data-testid="stFileUploader"] button > div > div,
 [data-testid="stFileUploader"] button p,
