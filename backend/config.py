@@ -13,9 +13,21 @@ PREVIEW_DIR = DATA_DIR / "previews"
 for p in (UPLOAD_DIR, OUTPUT_DIR, PREVIEW_DIR):
     p.mkdir(parents=True, exist_ok=True)
 
-# Gemini models. The fallback uses the current lightweight model rather than
-# the retired/restricted 2.5 Flash-Lite model for newly created API users.
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+# Gemini models. Five API keys are supported so requests can fail over to the
+# next configured project when one key reaches a quota/rate limit.
+GEMINI_API_KEYS = [
+    os.getenv(f"GEMINI_API_KEY_{i}", "").strip()
+    for i in range(1, 6)
+]
+GEMINI_API_KEYS = list(dict.fromkeys(key for key in GEMINI_API_KEYS if key))
+
+# Backward compatibility: an older single-key .env still works as API #1.
+legacy_gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
+if legacy_gemini_key and legacy_gemini_key not in GEMINI_API_KEYS:
+    GEMINI_API_KEYS.insert(0, legacy_gemini_key)
+
+# Existing imports can continue using this value as the primary key.
+GEMINI_API_KEY = GEMINI_API_KEYS[0] if GEMINI_API_KEYS else ""
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 GEMINI_FALLBACK_MODEL = os.getenv("GEMINI_FALLBACK_MODEL", "gemini-3.5-flash-lite")
 
