@@ -9,7 +9,7 @@ from backend.query_pipeline import QueryDrivenPipeline
 from backend.storage import ArtifactStore
 
 st.set_page_config(page_title="Editra AI", page_icon="✦", layout="wide", initial_sidebar_state="collapsed")
-css = Path(__file__).with_name("ui_theme_v2.css")
+css = Path(__file__).with_name("ui_theme_v3.css")
 if css.exists():
     st.markdown(f"<style>{css.read_text()}</style>", unsafe_allow_html=True)
 
@@ -23,13 +23,12 @@ head_left, head_right = st.columns([4, 1])
 with head_left:
     st.markdown('<div class="editra-brand">✦ Editra <span>AI</span></div><div class="brand-sub">Your AI document editor</div>', unsafe_allow_html=True)
 with head_right:
-    st.markdown('<div class="new-chat-wrap">', unsafe_allow_html=True)
-    if st.button("＋  New chat", use_container_width=True):
-        st.session_state.messages = []
-        st.session_state.current_artifact = None
-        st.session_state.pop("upload_paths", None)
-        st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
+    with st.container(key="new_chat_button"):
+        if st.button("＋  New chat", use_container_width=True):
+            st.session_state.messages = []
+            st.session_state.current_artifact = None
+            st.session_state.pop("upload_paths", None)
+            st.rerun()
 
 st.markdown('<div class="editra-badge">✦ AI-Powered Document Editing</div>', unsafe_allow_html=True)
 st.markdown('<div class="editra-title">Create with your <span>documents</span></div>', unsafe_allow_html=True)
