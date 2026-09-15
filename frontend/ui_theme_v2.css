@@ -8,15 +8,53 @@ section[data-testid="stSidebar"] { display:none !important; }
 .editra-brand span { color:#6d45e8 !important; }
 .brand-sub { color:#707b9d !important; font-size:.78rem; }
 
-/* Static high-contrast New Chat button: no hover/dynamic color changes */
+/* New Chat: permanently high-contrast. Explicitly override Streamlit's theme in every state. */
+.new-chat-wrap .stButton,
+.new-chat-wrap .stButton > button { width:100% !important; }
 .new-chat-wrap .stButton > button,
-.new-chat-wrap .stButton > button[kind="secondary"] { border:1px solid #171d2d !important; background:#171d2d !important; color:#ffffff !important; border-radius:10px !important; min-height:42px; font-weight:750 !important; box-shadow:none !important; opacity:1 !important; }
+.new-chat-wrap .stButton > button[kind="secondary"],
+.new-chat-wrap .stButton > button[kind="tertiary"] {
+    background:#171d2d !important;
+    background-color:#171d2d !important;
+    border:1px solid #171d2d !important;
+    color:#ffffff !important;
+    -webkit-text-fill-color:#ffffff !important;
+    border-radius:10px !important;
+    min-height:42px !important;
+    font-weight:750 !important;
+    box-shadow:none !important;
+    opacity:1 !important;
+    filter:none !important;
+    transform:none !important;
+    transition:none !important;
+}
 .new-chat-wrap .stButton > button:hover,
 .new-chat-wrap .stButton > button:focus,
-.new-chat-wrap .stButton > button:active { border:1px solid #171d2d !important; background:#171d2d !important; color:#ffffff !important; box-shadow:none !important; transform:none !important; }
+.new-chat-wrap .stButton > button:focus-visible,
+.new-chat-wrap .stButton > button:active,
+.new-chat-wrap .stButton > button:disabled {
+    background:#171d2d !important;
+    background-color:#171d2d !important;
+    border-color:#171d2d !important;
+    color:#ffffff !important;
+    -webkit-text-fill-color:#ffffff !important;
+    box-shadow:none !important;
+    filter:none !important;
+    transform:none !important;
+    opacity:1 !important;
+}
+.new-chat-wrap .stButton > button > div,
+.new-chat-wrap .stButton > button > div > div,
 .new-chat-wrap .stButton > button p,
 .new-chat-wrap .stButton > button span,
-.new-chat-wrap .stButton > button svg { color:#ffffff !important; fill:#ffffff !important; }
+.new-chat-wrap .stButton > button svg,
+.new-chat-wrap .stButton > button svg path {
+    color:#ffffff !important;
+    -webkit-text-fill-color:#ffffff !important;
+    fill:#ffffff !important;
+    stroke:#ffffff !important;
+    opacity:1 !important;
+}
 
 .editra-badge { display:inline-block; padding:.42rem .85rem; border-radius:999px; background:#e6ddff; color:#5d3bd0 !important; font-weight:800; font-size:.8rem; margin-bottom:.8rem; }
 .editra-title { font-size:2.8rem; line-height:1.08; font-weight:850; letter-spacing:-.05em; color:#18213f !important; }
@@ -30,17 +68,45 @@ section[data-testid="stSidebar"] { display:none !important; }
 .file-item { display:flex; align-items:center; justify-content:space-between; background:#eee8ff; border:1px solid #d8ccff; border-radius:11px; padding:.65rem .8rem; color:#453293 !important; }
 .file-item span { color:#21845b !important; font-size:.78rem; font-weight:750; }
 
-/* Static high-contrast Upload button: no hover/dynamic color changes */
+/* Upload: permanently high-contrast button with no hover/focus color change. */
 [data-testid="stFileUploader"] section { background:linear-gradient(145deg,#faf8ff,#eee8ff) !important; border:2px dashed #b8a4ff !important; border-radius:16px !important; min-height:145px; }
 [data-testid="stFileUploader"] section:hover { border-color:#b8a4ff !important; background:linear-gradient(145deg,#faf8ff,#eee8ff) !important; }
 [data-testid="stFileUploader"] button,
-[data-testid="stFileUploader"] button[kind="secondary"] { background:#171d2d !important; border:1px solid #171d2d !important; color:#ffffff !important; border-radius:9px !important; box-shadow:none !important; opacity:1 !important; }
+[data-testid="stFileUploader"] button[kind="secondary"],
+[data-testid="stFileUploader"] button[kind="tertiary"] {
+    background:#171d2d !important;
+    background-color:#171d2d !important;
+    border:1px solid #171d2d !important;
+    color:#ffffff !important;
+    -webkit-text-fill-color:#ffffff !important;
+    border-radius:9px !important;
+    box-shadow:none !important;
+    opacity:1 !important;
+    filter:none !important;
+    transform:none !important;
+    transition:none !important;
+}
 [data-testid="stFileUploader"] button:hover,
 [data-testid="stFileUploader"] button:focus,
-[data-testid="stFileUploader"] button:active { background:#171d2d !important; border:1px solid #171d2d !important; color:#ffffff !important; box-shadow:none !important; transform:none !important; }
+[data-testid="stFileUploader"] button:focus-visible,
+[data-testid="stFileUploader"] button:active,
+[data-testid="stFileUploader"] button:disabled {
+    background:#171d2d !important;
+    background-color:#171d2d !important;
+    border-color:#171d2d !important;
+    color:#ffffff !important;
+    -webkit-text-fill-color:#ffffff !important;
+    box-shadow:none !important;
+    filter:none !important;
+    transform:none !important;
+    opacity:1 !important;
+}
+[data-testid="stFileUploader"] button > div,
+[data-testid="stFileUploader"] button > div > div,
 [data-testid="stFileUploader"] button p,
 [data-testid="stFileUploader"] button span,
-[data-testid="stFileUploader"] button svg { color:#ffffff !important; fill:#ffffff !important; }
+[data-testid="stFileUploader"] button svg,
+[data-testid="stFileUploader"] button svg path { color:#ffffff !important; -webkit-text-fill-color:#ffffff !important; fill:#ffffff !important; stroke:#ffffff !important; opacity:1 !important; }
 [data-testid="stFileUploader"] small, [data-testid="stFileUploader"] span, [data-testid="stFileUploader"] label { color:#4b587b !important; }
 [data-testid="stTextArea"] textarea { background:rgba(255,255,255,.94) !important; color:#18213f !important; border:1px solid #c9c0e6 !important; border-radius:14px !important; caret-color:#6d45e8 !important; }
 [data-testid="stTextArea"] textarea::placeholder { color:#7b85a1 !important; opacity:1 !important; }
