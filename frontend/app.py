@@ -4,167 +4,154 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-
 from backend.orchestrator import EditraOrchestrator
 from backend.query_pipeline import QueryDrivenPipeline
 from backend.storage import ArtifactStore
 
 st.set_page_config(page_title="Editra AI", page_icon="✦", layout="wide")
-st.markdown("""
-<style>
-.block-container{padding-top:1.2rem;max-width:1200px}
-.chat-title{font-size:2rem;font-weight:700}
-.chat-subtitle{color:#777}
-</style>
-""", unsafe_allow_html=True)
+css_path = Path(__file__).with_name("ui_theme_v2.css")
+if css_path.exists():
+    st.markdown(f"<style>{css_path.read_text()}</style>", unsafe_allow_html=True)
 
-if "store" not in st.session_state: st.session_state.store = ArtifactStore()
-if "orch" not in st.session_state: st.session_state.orch = EditraOrchestrator(st.session_state.store)
-if "query_pipeline" not in st.session_state: st.session_state.query_pipeline = QueryDrivenPipeline(st.session_state.store)
-if "messages" not in st.session_state: st.session_state.messages = []
-if "current_artifact" not in st.session_state: st.session_state.current_artifact = None
+if "store" not in st.session_state:
+    st.session_state.store = ArtifactStore()
+if "orch" not in st.session_state:
+    st.session_state.orch = EditraOrchestrator(st.session_state.store)
+if "query_pipeline" not in st.session_state:
+    st.session_state.query_pipeline = QueryDrivenPipeline(st.session_state.store)
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+if "current_artifact" not in st.session_state:
+    st.session_state.current_artifact = None
 
 with st.sidebar:
-    st.markdown("## ✦ Editra AI")
-    st.caption("Query-driven editable document editor")
+    st.markdown('<div class="editra-brand">✦ Editra <span>AI</span></div>', unsafe_allow_html=True)
+    st.caption("Your AI document editor")
     if st.button("＋ New chat", use_container_width=True):
         st.session_state.messages = []
         st.session_state.current_artifact = None
         st.session_state.pop("upload_paths", None)
         st.rerun()
-
     st.divider()
-    st.markdown("### 1. Upload source")
+    st.markdown("**Simple workflow**")
+    st.caption("1. Upload a document")
+    st.caption("2. Write one task in the draft box")
+    st.caption("3. Generate an editable document")
+    st.divider()
+    st.caption("PDF · DOCX · PPTX · XLSX · CSV · Images")
+
+st.markdown('<div class="editra-badge">✦ AI-Powered Document Editing</div>', unsafe_allow_html=True)
+st.markdown('<div class="editra-title">Create with your <span>documents</span></div>', unsafe_allow_html=True)
+st.markdown('<div class="editra-subtitle">Upload a document and tell Editra what you need. Get an editable file in seconds.</div>', unsafe_allow_html=True)
+
+if not st.session_state.current_artifact:
+    st.markdown('<div class="workspace-card">', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">Upload your document</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-note">Add the source material Editra should use as evidence.</div>', unsafe_allow_html=True)
+
     uploads = st.file_uploader(
-        "DOCX, PDF, PPTX, PPT, XLSX, CSV, PNG, JPG, JPEG",
+        "Upload source document",
         type=["docx", "pdf", "pptx", "ppt", "xlsx", "csv", "png", "jpg", "jpeg"],
         accept_multiple_files=True,
+        key="main_uploader",
     )
     if uploads:
         st.session_state.upload_paths = [
-            str(st.session_state.store.save_upload(up.name, up.getvalue())) for up in uploads
+            str(st.session_state.store.save_upload(x.name, x.getvalue())) for x in uploads
         ]
-        st.success(f"{len(uploads)} file(s) ready")
+        st.success(f"{len(uploads)} source file(s) ready")
 
-    if st.session_state.current_artifact:
-        st.divider()
-        st.markdown(f"### Current version: v{st.session_state.current_artifact['version']}")
-        c1, c2 = st.columns(2)
-        with c1:
-            undo_clicked = st.button("↩ Undo last change", use_container_width=True)
-        with c2:
-            restore_clicked = st.button("⭯ Restore original", use_container_width=True)
-    else:
-        undo_clicked = restore_clicked = False
+    paths = getattr(st.session_state, "upload_paths", [])
+    if paths:
+        st.markdown('<div class="uploaded-list">', unsafe_allow_html=True)
+        for path in paths:
+            st.markdown(f'<div class="file-item">📄 <strong>{Path(path).name}</strong><span>Ready</span></div>', unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
-    st.divider()
-    st.markdown("### Capabilities")
-    for x in [
-        "• Extraction + semantic chunking",
-        "• Gemini embeddings + Pinecone RAG",
-        "• Query-driven semantic analysis",
-        "• Optional web research",
-        "• NEW editable PDF / PPT / DOCX / TXT",
-        "• Conversational editing + versioning",
-    ]:
-        st.caption(x)
-
-st.markdown('<div class="chat-title">Editra AI</div>', unsafe_allow_html=True)
-st.markdown(
-    '<div class="chat-subtitle">Upload source material, describe what you want, and generate a NEW editable artifact from retrieved evidence.</div>',
-    unsafe_allow_html=True,
-)
-
-if not st.session_state.current_artifact:
-    st.markdown("### Query-driven generation")
-
-    # One natural-language box replaces the previous description + query boxes.
-    # The user can describe the source context and requested action in the same
-    # instruction; the pipeline treats the complete text as the query.
+    st.markdown('<div class="section-title draft-title">Your task</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-note">Write your complete request in one draft. Editra uses it for retrieval and document generation.</div>', unsafe_allow_html=True)
     query = st.text_area(
-        "2. What would you like Editra to do?",
-        placeholder=(
-            "Describe the task in one request. Example: Analyze the key numerical "
-            "findings in the uploaded document, explain their significance, and "
-            "create a concise report with the important values."
-        ),
-        height=130,
+        "Task draft",
+        placeholder="Describe what you want Editra to do...\n\nExample: Summarize this document, extract the important numerical findings, explain their significance, and create a concise report.",
+        height=180,
+        max_chars=2000,
+        label_visibility="collapsed",
     )
 
-    output_type = st.selectbox(
-        "3. Output type",
-        ["Auto", "PDF", "PPT", "DOCX", "TXT"],
-    )
+    format_col, action_col = st.columns([1, 2.2], gap="medium")
+    with format_col:
+        output_type = st.selectbox(
+            "Output format",
+            ["Auto", "PDF", "PPT", "DOCX", "TXT"],
+            format_func=lambda x: "Auto · Best format" if x == "Auto" else x,
+        )
+    with action_col:
+        st.markdown('<div class="generate-label">Ready to create?</div>', unsafe_allow_html=True)
+        generate = st.button("✦  Generate Document  →", type="primary", use_container_width=True)
 
-    if st.button("Generate NEW document", type="primary", use_container_width=True):
-        paths = getattr(st.session_state, "upload_paths", [])
-        mapped = "Auto" if output_type == "Auto" else {
-            "PDF": "pdf",
-            "PPT": "pptx",
-            "DOCX": "docx",
-            "TXT": "txt",
-        }[output_type]
-
+    if generate:
+        mapped = "Auto" if output_type == "Auto" else {"PDF": "pdf", "PPT": "pptx", "DOCX": "docx", "TXT": "txt"}[output_type]
         if not paths:
-            st.error("Upload a source document first.")
+            st.error("Please upload a source document first.")
         elif not query.strip():
-            st.error("Enter what you want Editra to do. The request controls the new output.")
+            st.error("Please describe what you want Editra to create.")
         else:
             with st.spinner("Ingesting → embedding → retrieving → analyzing → generating → validating…"):
-                # The single request box is intentionally passed as both the
-                # description and query so existing pipeline stages receive the
-                # complete user intent without requiring a second field.
                 result = st.session_state.query_pipeline.run(query, query, paths, mapped)
-
             if result.get("artifact"):
                 st.session_state.current_artifact = result["artifact"]
                 st.session_state.messages += [
                     {"role": "user", "content": query},
-                    {
-                        "role": "assistant",
-                        "content": result["message"],
-                        "artifact": result["artifact"],
-                        "sources": result.get("sources", []),
-                    },
+                    {"role": "assistant", "content": result["message"], "artifact": result["artifact"], "sources": result.get("sources", [])},
                 ]
                 st.rerun()
             else:
                 st.error(result.get("message", "Generation failed."))
 
-last_assistant_index = max(
-    (i for i, m in enumerate(st.session_state.messages) if m.get("role") == "assistant"),
-    default=-1,
-)
-
-for i, m in enumerate(st.session_state.messages):
-    with st.chat_message(m["role"]):
-        st.markdown(m["content"])
-        if i == last_assistant_index and m.get("artifact"):
-            a = m["artifact"]
-            st.markdown(f"**Output:** {a['filename']} — version {a['version']}")
-            st.download_button(
-                "⬇ Download editable file",
-                data=Path(a["path"]).read_bytes(),
-                file_name=a["filename"],
-                mime=a["mime"],
-                key=f"download_{a['id']}",
-                use_container_width=True,
-            )
-            if a["preview_type"] == "images":
-                for img in a["preview"]:
-                    st.image(img, use_container_width=True)
-            else:
-                st.info(a["preview"])
-            if m.get("sources"):
-                with st.expander("Sources & traceability"):
-                    for source in m["sources"]:
-                        st.write(source)
+    st.markdown('</div>', unsafe_allow_html=True)
 
 if st.session_state.current_artifact:
-    prompt = st.chat_input("Ask Editra to modify the current generated artifact…")
-    if undo_clicked:
+    a = st.session_state.current_artifact
+    st.markdown(
+        f'<div class="result-header"><div class="result-kicker">DOCUMENT READY</div><div class="result-title">Your editable document is ready</div><div class="result-meta">{a["filename"]} · Version {a["version"]}</div></div>',
+        unsafe_allow_html=True,
+    )
+
+    latest = next((m for m in reversed(st.session_state.messages) if m.get("artifact")), None)
+    if latest:
+        st.markdown('<div class="result-card">', unsafe_allow_html=True)
+        st.markdown(f'<div class="result-message">{latest.get("content", "Document generated successfully.")}</div>', unsafe_allow_html=True)
+        st.download_button(
+            "⬇  Download editable document",
+            data=Path(a["path"]).read_bytes(),
+            file_name=a["filename"],
+            mime=a["mime"],
+            key=f"download_{a['id']}",
+            use_container_width=True,
+        )
+        if a["preview_type"] == "images":
+            for img in a["preview"]:
+                st.image(img, use_container_width=True)
+        else:
+            st.info(a["preview"])
+        if latest.get("sources"):
+            with st.expander("Sources & traceability"):
+                for source in latest["sources"]:
+                    st.write(source)
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    st.markdown('<div class="chat-section-title">Continue editing</div>', unsafe_allow_html=True)
+    st.markdown('<div class="chat-section-note">Ask Editra to change the generated document. Each request creates a new version.</div>', unsafe_allow_html=True)
+    edit_col1, edit_col2 = st.columns([1, 1])
+    with edit_col1:
+        undo = st.button("↩ Undo last change", use_container_width=True)
+    with edit_col2:
+        restore = st.button("⭯ Restore original", use_container_width=True)
+
+    prompt = st.chat_input("Describe your next edit… e.g. Make the summary shorter and add a table of key values")
+    if undo:
         prompt = "undo the last change"
-    elif restore_clicked:
+    elif restore:
         prompt = "go back to the original"
 
     if prompt:
@@ -172,7 +159,7 @@ if st.session_state.current_artifact:
         with st.chat_message("user"):
             st.markdown(prompt)
         with st.chat_message("assistant"):
-            with st.spinner("Applying and validating the requested edit…"):
+            with st.spinner("Applying and validating your edit…"):
                 result = st.session_state.orch.run(
                     prompt,
                     getattr(st.session_state, "upload_paths", []),
@@ -181,21 +168,21 @@ if st.session_state.current_artifact:
                 )
             if result.get("artifact"):
                 st.session_state.current_artifact = result["artifact"]
-                a = result["artifact"]
-                st.markdown(f"**Output:** {a['filename']} — version {a['version']}")
+                new_a = result["artifact"]
+                st.markdown(f"**Version {new_a['version']} created** · {new_a['filename']}")
                 st.download_button(
-                    "⬇ Download editable file",
-                    data=Path(a["path"]).read_bytes(),
-                    file_name=a["filename"],
-                    mime=a["mime"],
-                    key=f"download_live_{a['id']}",
+                    "⬇ Download latest version",
+                    data=Path(new_a["path"]).read_bytes(),
+                    file_name=new_a["filename"],
+                    mime=new_a["mime"],
+                    key=f"download_live_{new_a['id']}",
                     use_container_width=True,
                 )
-                if a["preview_type"] == "images":
-                    for img in a["preview"]:
+                if new_a["preview_type"] == "images":
+                    for img in new_a["preview"]:
                         st.image(img, use_container_width=True)
                 else:
-                    st.info(a["preview"])
+                    st.info(new_a["preview"])
                 if result.get("sources"):
                     with st.expander("Sources & traceability"):
                         for source in result["sources"]:
