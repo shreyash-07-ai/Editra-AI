@@ -1,5 +1,5 @@
 from ..config import (
-    GEMINI_API_KEY,
+    GEMINI_API_KEYS,
     PINECONE_API_KEY,
     PINECONE_INDEX,
     PINECONE_NAMESPACE,
@@ -9,21 +9,25 @@ from ..config import (
 
 
 class RAGAgent:
-    """Document-first RAG with Pinecone and a resilient local fallback."""
+    """Document-first RAG with Pinecone and resilient five-key Gemini fallback."""
 
     def __init__(self):
-        self.enabled = bool(PINECONE_API_KEY and GEMINI_API_KEY)
+        self.enabled = bool(PINECONE_API_KEY and GEMINI_API_KEYS)
         self._local_indexes = {}
-        self._gemini_client = None
+        self._gemini_clients = []
+        self._gemini_cursor = 0
         self._pinecone_client = None
         self.last_remote_error = None
         self._create_clients()
 
     def _create_clients(self):
-        if GEMINI_API_KEY and self._gemini_client is None:
+        if GEMINI_API_KEYS and not self._gemini_clients:
             from google import genai
 
-            self._gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+            self._gemini_clients = [
+                genai.Client(api_key=key)
+                for key in GEMINI_API_KEYS
+            ]
 
         if PINECONE_API_KEY and self._pinecone_client is None:
             from pinecone import Pinecone
@@ -39,46 +43,102 @@ class RAGAgent:
         self._pinecone_client = Pinecone(api_key=PINECONE_API_KEY)
         return self._pinecone_client
 
-    def _reset_gemini_client(self):
-        if not GEMINI_API_KEY:
+    def _reset_gemini_client(self, index):
+        if not GEMINI_API_KEYS or index >= len(GEMINI_API_KEYS):
             return None
 
         from google import genai
 
-        self._gemini_client = genai.Client(api_key=GEMINI_API_KEY)
-        return self._gemini_client
+        client = genai.Client(api_key=GEMINI_API_KEYS[index])
+        self._gemini_clients[index] = client
+        return client
+
+    @staticmethod
+    def _is_retryable_error(exc):
+        text = str(exc).lower()
+        markers = (
+            "429",
+            "resource_exhausted",
+            "quota",
+            "rate limit",
+            "rate_limit",
+            "too many requests",
+            "503",
+            "service unavailable",
+            "temporarily unavailable",
+            "overloaded",
+            "client has been closed",
+        )
+        return any(marker in text for marker in markers)
+
+    def _ordered_gemini_clients(self):
+        if not self._gemini_clients:
+            return []
+
+        start = self._gemini_cursor % len(self._gemini_clients)
+        return [
+            (start + offset) % len(self._gemini_clients)
+            for offset in range(len(self._gemini_clients))
+        ]
+
+    def _mark_gemini_success(self, index):
+        if self._gemini_clients:
+            self._gemini_cursor = (index + 1) % len(self._gemini_clients)
 
     def _embed(self, text, task_type):
-        if not self._gemini_client:
+        if not self._gemini_clients:
             return None
 
         from google.genai import types
 
-        try:
-            result = self._gemini_client.models.embed_content(
-                model=EMBEDDING_MODEL,
-                contents=text,
-                config=types.EmbedContentConfig(
-                    task_type=task_type,
-                    output_dimensionality=EMBEDDING_DIMENSION,
-                ),
-            )
-        except Exception as exc:
-            if "client has been closed" not in str(exc).lower():
-                raise
+        last_error = None
 
-            self._reset_gemini_client()
+        for index in self._ordered_gemini_clients():
+            client = self._gemini_clients[index]
 
-            result = self._gemini_client.models.embed_content(
-                model=EMBEDDING_MODEL,
-                contents=text,
-                config=types.EmbedContentConfig(
-                    task_type=task_type,
-                    output_dimensionality=EMBEDDING_DIMENSION,
-                ),
-            )
+            try:
+                result = client.models.embed_content(
+                    model=EMBEDDING_MODEL,
+                    contents=text,
+                    config=types.EmbedContentConfig(
+                        task_type=task_type,
+                        output_dimensionality=EMBEDDING_DIMENSION,
+                    ),
+                )
+                self._mark_gemini_success(index)
+                return result.embeddings[0].values
 
-        return result.embeddings[0].values
+            except Exception as exc:
+                last_error = exc
+
+                # Recreate a closed client and retry once with the same key.
+                if "client has been closed" in str(exc).lower():
+                    try:
+                        client = self._reset_gemini_client(index)
+                        result = client.models.embed_content(
+                            model=EMBEDDING_MODEL,
+                            contents=text,
+                            config=types.EmbedContentConfig(
+                                task_type=task_type,
+                                output_dimensionality=EMBEDDING_DIMENSION,
+                            ),
+                        )
+                        self._mark_gemini_success(index)
+                        return result.embeddings[0].values
+                    except Exception as retry_exc:
+                        last_error = retry_exc
+
+                # Quota/rate-limit errors move immediately to the next key.
+                # Other errors also move on so one bad project cannot block RAG.
+                continue
+
+        if last_error:
+            raise RuntimeError(
+                f"All {len(self._gemini_clients)} configured Gemini API keys "
+                f"failed during embedding. Details: {last_error}"
+            ) from last_error
+
+        return None
 
     def embed_documents(self, texts):
         return [
@@ -121,15 +181,12 @@ class RAGAgent:
                     metadata[field_name] = value
 
                 elif isinstance(value, (list, tuple)):
-                    # Pinecone supports lists of strings.
                     if all(isinstance(item, str) for item in value):
                         metadata[field_name] = list(value)
                     else:
                         metadata[field_name] = str(value)
 
                 elif value is not None:
-                    # Convert dictionaries/other objects to strings
-                    # instead of sending nested objects to Pinecone.
                     metadata[field_name] = str(value)
 
         return metadata
@@ -145,7 +202,7 @@ class RAGAgent:
 
         # Always keep vectors locally so generation can continue even
         # when Pinecone is unavailable.
-        if not GEMINI_API_KEY:
+        if not GEMINI_API_KEYS:
             self._local_indexes[document_id] = [
                 (f"{document_id}:{i}", None, chunk)
                 for i, chunk in enumerate(chunks)
@@ -179,9 +236,6 @@ class RAGAgent:
                 "fallback": True,
             }
 
-        # IMPORTANT:
-        # Build Pinecone-safe metadata instead of passing the
-        # original nested chunk["metadata"] dictionary.
         payload = []
 
         for record_id, vector, chunk in records:
@@ -214,8 +268,6 @@ class RAGAgent:
             }
 
         except Exception as exc:
-            # Pinecone problems should never prevent local RAG
-            # retrieval/generation from continuing.
             self.last_remote_error = exc
             self.enabled = False
 
@@ -335,8 +387,6 @@ class RAGAgent:
                 return output
 
             except Exception as exc:
-                # Disable remote retrieval and continue with
-                # local semantic retrieval.
                 self.last_remote_error = exc
                 self.enabled = False
 
@@ -346,7 +396,7 @@ class RAGAgent:
             [],
         )
 
-        if GEMINI_API_KEY and self._gemini_client:
+        if GEMINI_API_KEYS and self._gemini_clients:
             try:
                 qvector = self._embed(
                     query,
