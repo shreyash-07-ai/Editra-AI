@@ -1,0 +1,136 @@
+/* Editra AI - UI Theme */
+.stApp { background: linear-gradient(135deg,#eee9ff 0%,#f7f5ff 45%,#e8e1ff 100%); color:#18213f; }
+[data-testid="stHeader"] { background:transparent !important; height:0 !important; }
+[data-testid="stToolbar"] { visibility:hidden; }
+.block-container { max-width:1120px; padding-top:1.5rem; padding-bottom:4rem; }
+section[data-testid="stSidebar"] { display:none !important; }
+
+.editra-brand { font-size:1.55rem; font-weight:850; color:#18213f !important; }
+.editra-brand span { color:#6d45e8 !important; }
+.brand-sub { color:#707b9d !important; font-size:.78rem; }
+
+/* New Chat */
+.st-key-new_chat_button,
+.st-key-new_chat_button .stButton { width:100% !important; }
+.st-key-new_chat_button button,
+.st-key-new_chat_button button:hover,
+.st-key-new_chat_button button:focus,
+.st-key-new_chat_button button:focus-visible,
+.st-key-new_chat_button button:active,
+.st-key-new_chat_button button:disabled {
+    width:100% !important; min-height:42px !important;
+    background:#171d2d !important; background-color:#171d2d !important;
+    border:1px solid #171d2d !important; border-color:#171d2d !important;
+    border-radius:10px !important; color:#ffffff !important;
+    -webkit-text-fill-color:#ffffff !important; font-weight:750 !important;
+    box-shadow:none !important; opacity:1 !important; filter:none !important;
+    transform:none !important; transition:none !important;
+}
+.st-key-new_chat_button button > div,
+.st-key-new_chat_button button > div > div,
+.st-key-new_chat_button button p,
+.st-key-new_chat_button button span,
+.st-key-new_chat_button button svg,
+.st-key-new_chat_button button svg path { color:#ffffff !important; -webkit-text-fill-color:#ffffff !important; fill:#ffffff !important; stroke:#ffffff !important; opacity:1 !important; }
+
+/* Download button */
+[data-testid="stDownloadButton"] button,
+[data-testid="stDownloadButton"] button:hover,
+[data-testid="stDownloadButton"] button:focus,
+[data-testid="stDownloadButton"] button:focus-visible,
+[data-testid="stDownloadButton"] button:active,
+[data-testid="stDownloadButton"] button:disabled {
+    width:100% !important; min-height:42px !important;
+    background:#171d2d !important; background-color:#171d2d !important;
+    border:1px solid #171d2d !important; border-color:#171d2d !important;
+    border-radius:10px !important; color:#ffffff !important;
+    -webkit-text-fill-color:#ffffff !important; font-weight:750 !important;
+    box-shadow:none !important; opacity:1 !important; filter:none !important;
+    transform:none !important; transition:none !important;
+}
+[data-testid="stDownloadButton"] button > div,
+[data-testid="stDownloadButton"] button > div > div,
+[data-testid="stDownloadButton"] button p,
+[data-testid="stDownloadButton"] button span,
+[data-testid="stDownloadButton"] button svg,
+[data-testid="stDownloadButton"] button svg path { color:#ffffff !important; -webkit-text-fill-color:#ffffff !important; fill:#ffffff !important; stroke:#ffffff !important; opacity:1 !important; }
+
+/* Undo + Restore buttons */
+.stButton button,
+.stButton button:hover,
+.stButton button:focus,
+.stButton button:focus-visible,
+.stButton button:active,
+.stButton button:disabled {
+    min-height:42px !important;
+    background:#171d2d !important;
+    background-color:#171d2d !important;
+    border:1px solid #171d2d !important;
+    border-color:#171d2d !important;
+    border-radius:10px !important;
+    color:#ffffff !important;
+    -webkit-text-fill-color:#ffffff !important;
+    font-weight:750 !important;
+    box-shadow:none !important;
+    opacity:1 !important;
+    filter:none !important;
+    transform:none !important;
+    transition:none !important;
+}
+.stButton button > div,
+.stButton button > div > div,
+.stButton button p,
+.stButton button span,
+.stButton button svg,
+.stButton button svg path {
+    color:#ffffff !important;
+    -webkit-text-fill-color:#ffffff !important;
+    fill:#ffffff !important;
+    stroke:#ffffff !important;
+    opacity:1 !important;
+}
+
+/* Upload */
+[data-testid="stFileUploader"] section { background:linear-gradient(145deg,#faf8ff,#eee8ff) !important; border:2px dashed #b8a4ff !important; border-radius:16px !important; min-height:145px; }
+[data-testid="stFileUploader"] section:hover { border-color:#b8a4ff !important; background:linear-gradient(145deg,#faf8ff,#eee8ff) !important; }
+[data-testid="stFileUploader"] button,
+[data-testid="stFileUploader"] button:hover,
+[data-testid="stFileUploader"] button:focus,
+[data-testid="stFileUploader"] button:focus-visible,
+[data-testid="stFileUploader"] button:active,
+[data-testid="stFileUploader"] button:disabled { background:#171d2d !important; background-color:#171d2d !important; border:1px solid #171d2d !important; border-color:#171d2d !important; color:#ffffff !important; -webkit-text-fill-color:#ffffff !important; border-radius:9px !important; box-shadow:none !important; opacity:1 !important; filter:none !important; transform:none !important; transition:none !important; }
+[data-testid="stFileUploader"] button > div,
+[data-testid="stFileUploader"] button > div > div,
+[data-testid="stFileUploader"] button p,
+[data-testid="stFileUploader"] button span,
+[data-testid="stFileUploader"] button svg,
+[data-testid="stFileUploader"] button svg path { color:#ffffff !important; -webkit-text-fill-color:#ffffff !important; fill:#ffffff !important; stroke:#ffffff !important; opacity:1 !important; }
+[data-testid="stFileUploader"] small, [data-testid="stFileUploader"] span, [data-testid="stFileUploader"] label { color:#4b587b !important; }
+
+[data-testid="stTextArea"] textarea { background:rgba(255,255,255,.94) !important; color:#18213f !important; border:1px solid #c9c0e6 !important; border-radius:14px !important; caret-color:#6d45e8 !important; }
+[data-testid="stTextArea"] textarea::placeholder { color:#7b85a1 !important; opacity:1 !important; }
+[data-testid="stTextArea"] textarea:focus { border-color:#6d45e8 !important; box-shadow:0 0 0 3px rgba(109,69,232,.12) !important; }
+[data-testid="stSelectbox"] label { color:#34415f !important; font-weight:750 !important; }
+[data-testid="stSelectbox"] div[data-baseweb="select"] > div { background:#fff !important; border:1px solid #c9c0e6 !important; color:#18213f !important; border-radius:11px; min-height:44px; }
+[data-testid="stSelectbox"] div[data-baseweb="select"] * { color:#18213f !important; }
+.generate-label { color:#61709a !important; font-size:.82rem; font-weight:750; margin:.15rem 0 .35rem; }
+
+button[kind="primary"] { background:linear-gradient(90deg,#9568f7,#6d45e8) !important; border:0 !important; border-radius:12px !important; min-height:46px; font-weight:800 !important; color:#fff !important; box-shadow:0 9px 22px rgba(109,69,232,.22); }
+button[kind="primary"]:hover { filter:brightness(.98); transform:translateY(-1px); }
+
+.result-header { background:linear-gradient(135deg,rgba(255,255,255,.92),rgba(239,231,255,.9)); border:1px solid #ddd5f6; border-radius:18px; padding:1.3rem 1.4rem; margin-bottom:1rem; }
+.result-kicker { color:#6947e8 !important; font-size:.73rem; font-weight:850; letter-spacing:.1em; }
+.result-title { color:#18213f !important; font-size:1.55rem; font-weight:850; margin-top:.2rem; }
+.result-meta { color:#61709a !important; font-size:.88rem; margin-top:.25rem; }
+.result-card { background:rgba(255,255,255,.82); border:1px solid rgba(255,255,255,.95); border-radius:18px; padding:1.25rem; box-shadow:0 12px 32px rgba(78,61,140,.08); }
+.result-message { color:#27344f !important; background:#f1edff; border-left:4px solid #6d45e8; border-radius:9px; padding:.85rem 1rem; margin-bottom:1rem; }
+.chat-section-title { color:#18213f !important; font-size:1.3rem; font-weight:820; margin-top:1.7rem; }
+.chat-section-note { color:#61709a !important; font-size:.9rem; margin-bottom:.7rem; }
+[data-testid="stChatMessage"] { color:#27344f !important; background:rgba(255,255,255,.58); border-radius:14px; }
+[data-testid="stChatMessage"] p, [data-testid="stChatMessage"] div { color:inherit; }
+[data-testid="stChatInput"] { background:rgba(255,255,255,.72) !important; border-radius:14px; }
+[data-testid="stChatInput"] textarea { color:#18213f !important; background:#fff !important; }
+[data-testid="stChatInput"] textarea::placeholder { color:#7b85a1 !important; opacity:1 !important; }
+.stAlert { color:#27344f !important; }
+.stCaption, .stMarkdown, .stText, p, label { color:inherit; }
+hr { border-color:transparent !important; }
